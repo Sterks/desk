@@ -1,3 +1,4 @@
+import { useDraggable } from '@dnd-kit/core';
 import type { CSSProperties } from 'react';
 import type { BoardInfo, TaskItem } from '../api/types';
 import { agentColor } from '../lib/agentColor';
@@ -52,6 +53,22 @@ export function TaskCardView({ task, board, onOpen, lifted = false }: TaskCardPr
   );
 }
 
-export function TaskCard(props: TaskCardProps) {
-  return <TaskCardView {...props} />;
+export function TaskCard({ task, board, onOpen }: TaskCardProps) {
+  // role group, а не button по умолчанию: внутри есть кнопка названия, а вложенные интерактивные роли axe считает ошибкой.
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: task.id,
+    attributes: { role: 'group', roleDescription: 'перетаскиваемая задача' },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className="draggable"
+      data-dragging={isDragging || undefined}
+      {...attributes}
+      {...listeners}
+      aria-label={`${task.id}: ${task.title}`}
+    >
+      <TaskCardView task={task} board={board} onOpen={onOpen} />
+    </div>
+  );
 }

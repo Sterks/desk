@@ -1,3 +1,4 @@
+import { useDroppable } from '@dnd-kit/core';
 import type { ReactNode } from 'react';
 import type { BoardInfo, ColumnInfo, TaskItem } from '../api/types';
 import { TaskCard } from './TaskCard';
@@ -32,12 +33,15 @@ export interface ColumnProps {
   column: ColumnInfo;
   tasks: TaskItem[];
   board: BoardInfo;
+  dropState: DropState;
   onOpen(id: string): void;
 }
 
-export function Column({ column, tasks, board, onOpen }: ColumnProps) {
+export function Column({ column, tasks, board, dropState, onOpen }: ColumnProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
+  const state: DropState = isOver && dropState === 'allowed' ? 'over' : dropState;
   return (
-    <ColumnFrame column={column} dropState="idle">
+    <ColumnFrame column={column} dropState={state} setNodeRef={setNodeRef}>
       {tasks.length === 0 ? (
         <p className="column-empty">пусто</p>
       ) : (
