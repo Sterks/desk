@@ -67,5 +67,24 @@ export const CLAUDE_MD_SNIPPET = `${CLAUDE_MD_MARKER}
 - Перед созданием задачи ищи дубликаты: \`list_tasks\` с \`query\`.
 - Берёшь задачу — перенеси её через \`move_task\` и заполни поля, которые требует переход.
 - Решения и находки записывай через \`add_note\`.
+- Если в промпте указана твоя карточка на доске desk — пиши ход работы через add_note в неё и не создавай новую карточку. Если карточки нет — найди свою через list_tasks(assignee: <твой тип>, column: in_progress).
 `;
 export const DESK_MCP_SERVER = { command: 'desk', args: ['mcp'] } as const;
+
+export interface HookEntry {
+  matcher?: string;
+  hooks: { type: 'command'; command: string; timeout: number }[];
+}
+
+const HOOK_TIMEOUT_S = 10;
+const command = (name: string): HookEntry['hooks'] => [{ type: 'command', command: `desk hook ${name}`, timeout: HOOK_TIMEOUT_S }];
+
+/**
+ * Хуки Claude Code для карточек сабагентов. SubagentStop нужен для фоновых сабагентов:
+ * для них PostToolUse приходит сразу при запуске (status "async_launched"), а не по завершении.
+ */
+export const DESK_HOOKS: readonly { event: string; entry: HookEntry }[] = [
+  { event: 'PreToolUse', entry: { matcher: 'Agent|Task', hooks: command('agent-start') } },
+  { event: 'PostToolUse', entry: { matcher: 'Agent|Task', hooks: command('agent-end') } },
+  { event: 'SubagentStop', entry: { hooks: command('agent-end') } },
+];
