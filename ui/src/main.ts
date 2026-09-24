@@ -1,4 +1,5 @@
 import '@life_uikit/uikit/variables.css';
+import '@life_uikit/uikit/variables-dark.css';
 import '@life_uikit/uikit/fonts.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 
+// dev-режим: `desk ui` на 4717 + `npm run dev:ui`; прокси подменяет Origin, иначе сервер ответит 403.
 const DESK_UI = 'http://127.0.0.1:4717';
 
 export default defineConfig({
