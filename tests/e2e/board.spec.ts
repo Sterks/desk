@@ -1,14 +1,15 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { card, column, dragTo, openBoard, readTask, seed, taskMarkdown, toasts, writeRawTask, writeTask } from './fixtures';
+import { card, column, dragTo, movesAfterDrag, openBoard, readTask, seed, taskMarkdown, toasts, trackMoves, writeRawTask, writeTask } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
 
 // Окна requires (TNPopup) ищем через поле внутри, а не через сам диалог: role="dialog" у TNPopup
 // висит на обёртке .tn-popup__block нулевой высоты, и Playwright считает корень диалога скрытым,
-// хотя окно открыто и работает (известная особенность разметки Task 6, та же обходная схема, что
-// в drag.spec.ts). Сам getByRole('dialog', { name }) остаётся областью поиска — имя проверяется.
-// Панель задачи — наш собственный <aside role="dialog">, к ней это не относится.
+// хотя окно открыто и работает. Это известная, осознанно не чинившаяся особенность разметки кита
+// (Task 6) — исправление означало бы править ui/vendor/tn-uikit, что вне области этого плана; та же
+// обходная схема, что в drag.spec.ts. Сам getByRole('dialog', { name }) остаётся областью поиска —
+// имя проверяется. Панель задачи — наш собственный <aside role="dialog">, к ней это не относится.
 //
 // Сценарии, которыми уже владеет drag.spec.ts, здесь не дублируются:
 // - «WIP-лимит: четвёртая задача не попадает в In progress» — там «отказ сервера (WIP-лимит)»,
@@ -48,10 +49,7 @@ test('перенос без assignee открывает окно requires и з�
 // dragover доски синхронно не принимают бросок в запрещённую колонку — запроса нет, объяснять
 // нечего, карточка просто не покидает исходную колонку. Проверяем это более сильное поведение.
 test('запрещённый переход: бросок не принимается, карточка остаётся, запроса и toast нет', async ({ page }) => {
-  const moves: string[] = [];
-  page.on('request', (r) => {
-    if (r.method() === 'POST' && r.url().endsWith('/move')) moves.push(r.url());
-  });
+  await trackMoves(page);
   await openBoard(page, [{ id: 'T-001', title: 'Сразу в Done нельзя', column: 'backlog' }]);
   const from = await card(page, 'T-001').boundingBox();
   const to = await column(page, 'Done').boundingBox();
@@ -68,7 +66,7 @@ test('запрещённый переход: бросок не принимае�
   await expect(column(page, 'Backlog').getByTestId('card-T-001')).toBeVisible();
   await expect(column(page, 'Done').getByTestId('card-T-001')).toHaveCount(0);
   await expect(toasts(page).locator('.toast')).toHaveCount(0);
-  expect(moves).toEqual([]);
+  expect(await movesAfterDrag(page)).toBe(0);
   expect(await readTask('T-001')).toContain('column: backlog');
 });
 
@@ -134,6 +132,25 @@ test('axe: нет нарушений доступности на доске в �
     inProgress('T-004', 'p3'),
   ]);
   await expect(page.locator('html')).toHaveClass(/tn-dark-theme/);
+  await expect(column(page, 'In progress')).toHaveAttribute('data-limit', 'full');
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+// R6-fix: тот же самый аудит, но в светлой теме, а не только в тёмной — светлые p1 (4.79:1) и
+// WIP-full (4.94:1) держат наименьший запас над AA-порогом 4.5:1 во всей системе токенов
+// (см. global-constraints.md, п.6), теснее, чем их тёмные аналоги. Регрессия токена, которая уронит
+// именно эту пару под порог, иначе могла бы остаться незамеченной: тест выше её не поймает.
+test('axe: нет нарушений доступности на доске в светлой теме, все приоритеты и WIP на лимите', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  const inProgress = (id: string, priority: string) => ({ id, title: id, column: 'in_progress', assignee: 'a', priority });
+  await openBoard(page, [
+    { id: 'T-001', title: 'Пожар', column: 'backlog', priority: 'p0', assignee: 'backend-agent', agent: 'ecc:code-reviewer' },
+    inProgress('T-002', 'p1'),
+    inProgress('T-003', 'p2'),
+    inProgress('T-004', 'p3'),
+  ]);
+  await expect(page.locator('html')).not.toHaveClass(/tn-dark-theme/);
   await expect(column(page, 'In progress')).toHaveAttribute('data-limit', 'full');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

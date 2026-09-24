@@ -2,9 +2,7 @@
 import { computed, useId } from 'vue';
 import TNInput from '@life_uikit/uikit/components/input/input.vue';
 import TNTextarea from '@life_uikit/uikit/components/textarea/textarea.vue';
-import TNCheckbox from '@life_uikit/uikit/components/checkbox/checkbox.vue';
 import TNFormItem from '@life_uikit/uikit/components/form-item/form-item.vue';
-import TNMultiSelector from '@life_uikit/uikit/components/multiselect/multiselect.vue';
 import type { FieldInfo, FieldValue } from '../api/types';
 import { parseNumberInput } from '../lib/fields';
 
@@ -18,11 +16,12 @@ const listValue = computed(() => (Array.isArray(props.value) ? props.value : [])
 const orNull = (text: string): string | null => (text === '' ? null : text);
 // useId: окно requires открывается поверх панели с теми же полями — id не должны совпадать.
 const selectId = `field-${props.def.id}-${useId()}`;
+const checkboxId = `field-${props.def.id}-${useId()}`;
 
-// TNMultiSelector рисует дерево (`TNTreeProps.Option`): нужен объект { id, title, isCheck, deep },
-// не голая строка — см. ui/vendor/tn-uikit/components/tree/tree.types.ts. `flat: true` ниже отключает
-// вложенность (isCheck/deep не используются в этом режиме, но остаются в типе как обязательные поля).
-const multiOptions = computed(() => (props.def.values ?? []).map((v) => ({ id: v, title: v, isCheck: false, deep: 0 })));
+function toggleMultiValue(v: string, checked: boolean): void {
+  const next = checked ? [...listValue.value, v] : listValue.value.filter((x) => x !== v);
+  emit('update:value', next.length > 0 ? next : null);
+}
 </script>
 
 <template>
@@ -48,23 +47,52 @@ const multiOptions = computed(() => (props.def.values ?? []).map((v) => ({ id: v
         <option v-for="v in def.values ?? []" :key="v" :value="v">{{ v }}</option>
       </select>
     </TNFormItem>
-    <TNMultiSelector
-      v-else-if="def.type === 'multi_enum'"
-      :label="def.id"
-      :description="def.guide ?? undefined"
-      :required="def.required"
-      :options="multiOptions"
-      flat
-      :model-value="listValue"
-      @update:model-value="(v) => emit('update:value', v && v.length > 0 ? v : null)"
-    />
-    <TNCheckbox
+    <!-- multi_enum — нативный `<fieldset>`+`<legend>` вместо TNMultiSelector: тот рисует триггер и
+         список вариантов на голых `<div>`/`<li>` с click-обработчиками (multiselect.vue), без role,
+         tabindex и клавиатуры — поле было полностью недоступно с клавиатуры и скринридеру (R6).
+         `<legend>`, а не TNFormItem's `label[for]`, потому что `for` требует «labelable» цели
+         (input/select/textarea/…) — fieldset в этот список не входит, и внешний `<label for>` на нём
+         не создал бы у ассистивных технологий связь группы с именем; `<legend>` — единственный
+         элемент, который HTML/ARIA признают названием fieldset-группы. Пустой массив = очистить поле. -->
+    <fieldset v-else-if="def.type === 'multi_enum'" class="field-fieldset">
+      <legend class="field-legend">
+        {{ def.id }}<span v-if="def.required" class="field-required" aria-label="обязательное"> *</span>
+      </legend>
+      <p v-if="def.guide" class="field-guide-inline">{{ def.guide }}</p>
+      <div class="checkbox-list">
+        <label v-for="v in def.values ?? []" :key="v" class="checkbox-item">
+          <input
+            type="checkbox"
+            class="checkbox-control"
+            :value="v"
+            :checked="listValue.includes(v)"
+            @change="toggleMultiValue(v, ($event.target as HTMLInputElement).checked)"
+          />
+          {{ v }}
+        </label>
+      </div>
+    </fieldset>
+    <!-- bool — нативный `<input type="checkbox">` вместо TNCheckbox: тот кит рисует `<button
+         type="button">` с классами, отражающими состояние только визуально (checkbox.vue) — ни
+         role="checkbox", ни aria-checked, ни нативной семантики чекбокса, так что ассистивные
+         технологии не видят его состояние (R6). item-id связывает TNFormItem's `<label for>` с этим
+         `<input>`, как у enum-поля выше — input входит в число labelable-элементов, association
+         работает штатно. -->
+    <TNFormItem
       v-else-if="def.type === 'bool'"
       :label="def.id"
       :description="def.guide ?? undefined"
-      :model-value="boolValue"
-      @update:model-value="(v) => emit('update:value', v ?? false)"
-    />
+      :required="def.required"
+      :item-id="checkboxId"
+    >
+      <input
+        :id="checkboxId"
+        type="checkbox"
+        class="checkbox-control"
+        :checked="boolValue"
+        @change="emit('update:value', ($event.target as HTMLInputElement).checked)"
+      />
+    </TNFormItem>
     <TNInput
       v-else-if="def.type === 'number'"
       :label="def.id"

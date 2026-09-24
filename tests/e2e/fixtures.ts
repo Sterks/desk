@@ -85,6 +85,31 @@ export async function openBoard(page: Page, tasks: SeedTask[]): Promise<void> {
  * (20 шагов) даёт dragover по пути до цели. Порога активации, как у dnd-kit (5px), нет, но эти шаги
  * проверены на всех трёх браузерах (Task 8 и Task 9) и оставлены как есть.
  */
+/*
+ * Счётчик POST …/move в самой странице, без таймеров: fetch вызывается синхронно из обработчика броска
+ * (Board.endDrag → App.handleMove → api.move), раньше, чем Vue перерисует data-drop в 'idle'. Поэтому
+ * «дождаться idle, потом прочитать счётчик» — детерминированная проверка «запроса не было»: в отличие
+ * от `page.on('request', …)`, чья доставка событий асинхронна и могла бы дать ложный проход, если
+ * проверку запустить раньше, чем событие дойдёт до теста. Ставится до openBoard (addInitScript
+ * действует со следующей навигации).
+ */
+export async function trackMoves(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as typeof window & { __moves?: number };
+    const original = w.fetch.bind(w);
+    w.__moves = 0;
+    w.fetch = (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/move')) w.__moves = (w.__moves ?? 0) + 1;
+      return original(input, init);
+    };
+  });
+}
+
+export async function movesAfterDrag(page: Page): Promise<number> {
+  await expect(page.locator('.board [data-drop]:not([data-drop="idle"])')).toHaveCount(0);
+  return page.evaluate(() => (window as typeof window & { __moves?: number }).__moves ?? -1);
+}
+
 export async function dragTo(page: Page, source: Locator, target: Locator): Promise<void> {
   const from = await source.boundingBox();
   const to = await target.boundingBox();

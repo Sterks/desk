@@ -1,37 +1,17 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { card, column, dragTo, openBoard, readTask, toasts, writeTask } from './fixtures';
+import { card, column, dragTo, movesAfterDrag, openBoard, readTask, toasts, trackMoves, writeTask } from './fixtures';
 
 // Механизм drag-and-drop на vue-draggable-plus (Task 8): SortableJS-плейсхолдер не пускается в
 // запрещённую колонку, цель — колонка под указателем при отпускании, отменённый жест ничего не
 // переносит, а карточка переезжает только после ответа сервера.
 //
-// Окна requires ищем по полю внутри: role="dialog" у TNPopup сейчас висит на обёртке нулевой высоты,
-// и Playwright считает сам диалог скрытым (известная проблема Task 6, чинится в Task 9).
+// Окна requires ищем по полю внутри, а не через сам диалог: role="dialog" у TNPopup висит на обёртке
+// .tn-popup__block нулевой высоты, и Playwright считает корень диалога скрытым, хотя окно открыто и
+// работает. Это известная, осознанно не чинившаяся особенность разметки кита (Task 6) — исправление
+// означало бы править ui/vendor/tn-uikit, что вне области этого плана; воркэраунд остаётся постоянным
+// решением, та же схема, что в board.spec.ts.
 
 test.describe.configure({ mode: 'serial' });
-
-/*
- * Счётчик POST …/move в самой странице, без таймеров: fetch вызывается синхронно из обработчика броска
- * (Board.endDrag → App.handleMove → api.move), раньше, чем Vue перерисует data-drop в 'idle'. Поэтому
- * «дождаться idle, потом прочитать счётчик» — детерминированная проверка «запроса не было».
- * Ставится до openBoard (addInitScript действует со следующей навигации).
- */
-async function trackMoves(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const w = window as typeof window & { __moves?: number };
-    const original = w.fetch.bind(w);
-    w.__moves = 0;
-    w.fetch = (input, init) => {
-      if (init?.method === 'POST' && String(input).endsWith('/move')) w.__moves = (w.__moves ?? 0) + 1;
-      return original(input, init);
-    };
-  });
-}
-
-async function movesAfterDrag(page: Page): Promise<number> {
-  await expect(page.locator('.board [data-drop]:not([data-drop="idle"])')).toHaveCount(0);
-  return page.evaluate(() => (window as typeof window & { __moves?: number }).__moves ?? -1);
-}
 
 /** Начать перетаскивание карточки и довести указатель до точки, не отпуская. */
 async function grab(page: Page, source: Locator): Promise<void> {
