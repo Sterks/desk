@@ -76,9 +76,17 @@ async function submit(): Promise<void> {
           </template>
         </div>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <!--
+          Primary action button placed BEFORE Cancel in DOM order — see the identical note in
+          CreateTaskDialog.vue: TNButton has no native `type` attribute, so every TNButton inside a
+          <form> is an implicit type="submit", and the HTML implicit-submission algorithm activates
+          the FIRST submit button in tree order on Enter. With Cancel first (as it was before this
+          fix), Enter in a focused field fired Cancel's handler instead of submitting. `.modal-foot`'s
+          `flex-direction: row-reverse` (panel.css) keeps Cancel visually on the left, unchanged.
+        -->
         <footer class="modal-foot">
-          <TNButton type="outline" @click="emit('cancel')">Отмена</TNButton>
           <TNButton type="action" :disabled="!complete || saving" @click="submit">Перенести</TNButton>
+          <TNButton type="outline" @click="emit('cancel')">Отмена</TNButton>
         </footer>
       </form>
     </TNPopup>

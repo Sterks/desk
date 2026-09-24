@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
 import TNInput from '@life_uikit/uikit/components/input/input.vue';
-import TNTextarea from '@life_uikit/uikit/components/textarea/textarea.vue';
 import TNSelectV2 from '@life_uikit/uikit/components/select_v2/select_v2.vue';
 import TNButton from '@life_uikit/uikit/components/button/button.vue';
 import TNPopup from '@life_uikit/uikit/components/popup/popup.vue';
@@ -83,13 +82,39 @@ async function submit(): Promise<void> {
           <FieldInput :def="ASSIGNEE_FIELD" :value="assignee || undefined" @update:value="(v) => (assignee = typeof v === 'string' ? v : '')" />
           <FieldInput v-for="f in board.fields" :key="f.id" :def="f" :value="fields[f.id] ?? undefined" @update:value="(v) => (fields = { ...fields, [f.id]: v })" />
           <div class="field-row">
-            <TNTextarea label="description" :rows="5" v-model="description" />
+            <!--
+              TNTextarea (vendor) generates its own internal id and wires it to TextareaAutosize,
+              but never forwards that id as `item-id` to TNFormItem — so TNFormItem's rendered
+              `<label>` never gets a `for` attribute (unfixable from here: TNTextarea exposes no
+              prop to override or read back that internal id, and passing extra attrs like
+              `aria-label` externally would fall through to TNFormItem's own root `<div>`, not to
+              the real `<textarea>`, since TNFormItem's slot content is not part of that fallthrough
+              chain). Falling back to a plain, hand-labelled `<textarea>` (same fallback already used
+              for `TNSearch` in FilterBar.vue) is the only way to get a real `for`/`id` pairing
+              without touching vendor code. `.tn-form-item__label`/`.tn-textarea__textarea` are the
+              kit's own global style classes (form-item.vue/textarea.vue), reused here only to keep
+              the visual appearance identical to the TNTextarea-rendered markup.
+            -->
+            <label for="new-description" class="tn-form-item__label">description</label>
+            <textarea id="new-description" v-model="description" rows="5" class="tn-textarea__textarea"></textarea>
           </div>
         </div>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+        <!--
+          Primary action button is placed BEFORE Cancel in DOM order (footer still displays Cancel
+          on the left visually via `.modal-foot`'s `flex-direction: row-reverse`, see panel.css).
+          Reason: TNButton renders a plain `<button>` with no `type` attribute at all (see
+          button.vue), so inside a `<form>` every TNButton is an implicit native `type="submit"`.
+          Per the HTML implicit-submission algorithm, pressing Enter in a focused text field submits
+          the form via the FIRST submit button in tree order — with Cancel first in the DOM (as it
+          was before this fix), Enter fired Cancel's `@click` handler (`emit('close')`) instead of
+          `submit()`, discarding the user's input. Reordering so "Создать" comes first in the DOM
+          makes it the implicit-submit target, matching user expectation, while the CSS keeps the
+          on-screen layout exactly as before.
+        -->
         <footer class="modal-foot">
-          <TNButton type="outline" @click="emit('close')">Отмена</TNButton>
           <TNButton type="action" :disabled="saving || title.trim() === ''" @click="submit">Создать</TNButton>
+          <TNButton type="outline" @click="emit('close')">Отмена</TNButton>
         </footer>
       </form>
     </TNPopup>
