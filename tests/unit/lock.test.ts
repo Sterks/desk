@@ -51,6 +51,16 @@ describe('withLock', () => {
     const err = await catchErrorAsync(() => withLock(root, async () => 'never', { timeoutMs: 100 }));
     expect(err.code).toBe('LOCK_TIMEOUT');
   });
+
+  it('release не удаляет lock, который перезаписал другой владелец', async () => {
+    const root = await makeProject();
+    const otherContent = 'other-owner-token\n';
+    await withLock(root, async () => {
+      await writeFile(lockPath(root), otherContent);
+    });
+    expect(existsSync(lockPath(root))).toBe(true);
+    expect(await readFile(lockPath(root), 'utf8')).toBe(otherContent);
+  });
 });
 
 describe('writeFileAtomic', () => {
