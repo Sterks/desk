@@ -1,4 +1,4 @@
-import type { ApiError, BoardInfo, FieldValue, ProjectInfo, ProjectList, TaskFull, TaskList } from './types';
+import type { ApiError, BoardInfo, FieldValue, ProjectInfo, TaskFull, TaskList } from './types';
 
 export class ApiRequestError extends Error {
   readonly error: ApiError;
@@ -40,7 +40,6 @@ const taskUrl = (id: string, suffix = ''): string => `/api/tasks/${encodeURIComp
 
 export const api = {
   project: () => request<ProjectInfo>('GET', '/api/project'),
-  projects: () => request<ProjectList>('GET', '/api/projects'),
   board: () => request<BoardInfo>('GET', '/api/board'),
   tasks: () => request<TaskList>('GET', '/api/tasks'),
   task: (id: string) => request<TaskFull>('GET', taskUrl(id)),

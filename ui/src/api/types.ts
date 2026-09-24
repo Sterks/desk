@@ -43,10 +43,6 @@ export interface ProjectInfo {
   legacy: boolean;
 }
 
-export interface ProjectList {
-  projects: ProjectInfo[];
-}
-
 export interface TaskItem {
   id: string;
   title: string;
