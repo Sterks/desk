@@ -12,6 +12,7 @@ import {
   applyDefaults,
   assertTaskValid,
   checkActor,
+  checkAgent,
   checkText,
   checkTitle,
   validateTask,
@@ -23,6 +24,8 @@ export interface CreateInput {
   description?: unknown;
   column?: string;
   fields?: Record<string, unknown>;
+  /** Полный тип сабагента; задаёт только хук agent-start, в MCP/HTTP не пробрасывается. */
+  agent?: unknown;
 }
 
 export interface UpdateInput {
@@ -88,6 +91,7 @@ export async function createTask(
   const actor = checkActor(actorRaw);
   const title = checkTitle(input.title);
   const description = checkText(input.description ?? '', 'description').trim();
+  const agent = input.agent === undefined ? undefined : checkAgent(input.agent);
   const firstColumn = board.columns[0]?.id ?? '';
   const target = input.column ?? firstColumn;
 
@@ -101,6 +105,7 @@ export async function createTask(
       id,
       title,
       column: firstColumn,
+      ...(agent === undefined ? {} : { agent }),
       createdBy: actor,
       createdAt: now,
       updatedAt: now,

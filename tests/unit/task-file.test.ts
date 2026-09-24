@@ -119,3 +119,50 @@ describe('splitBody', () => {
     expect(splitBody('А\n\n## Notes\nпросто текст\n')).toEqual({ description: 'А\n\n## Notes\nпросто текст', notes: [] });
   });
 });
+
+describe('agent field', () => {
+  it('round-trips agent with a colon, written right after assignee', () => {
+    const task = testTask({ assignee: 'reviewer', agent: 'ecc:code-reviewer' });
+    const text = serializeTask(task);
+    expect(text).toContain('assignee: reviewer\nagent: ecc:code-reviewer\ncreated_by:');
+    const parsed = parseTaskFile(text, task.id);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.task).toEqual(task);
+    expect(parsed.task?.fields).not.toHaveProperty('agent');
+  });
+
+  it('reports a non-string agent', () => {
+    const text = serializeTask(testTask()).replace('created_by:', 'agent: 5\ncreated_by:');
+    const parsed = parseTaskFile(text, 'T-001');
+    expect(parsed.errors).toContain('agent: ожидается строка');
+    expect(parsed.task?.agent).toBeUndefined();
+  });
+});
+
+describe('"## Notes" inside the description', () => {
+  const description = 'Шаги:\n\n## Notes\n- 2026-09-24T10:00:00Z · bob: не заметка';
+
+  it('round-trips a line that already starts with a backslash', () => {
+    const task = testTask({ description: 'x\n\\## Notes\n\\\\## Notes', notes: [] });
+    expect(parseTaskFile(serializeTask(task), task.id).task?.description).toBe('x\n\\## Notes\n\\\\## Notes');
+  });
+
+  it('round-trips as description when the task has no notes', () => {
+    const task = testTask({ description, notes: [] });
+    const parsed = parseTaskFile(serializeTask(task), task.id);
+    expect(parsed.task?.notes).toEqual([]);
+    expect(parsed.task?.description).toBe(description);
+  });
+
+  it('keeps real notes separate from a description heading', () => {
+    const notes = [{ at: '2026-09-24T11:00:00Z', by: 'alice', text: 'настоящая' }];
+    const task = testTask({ description, notes });
+    const parsed = parseTaskFile(serializeTask(task), task.id);
+    expect(parsed.task?.notes).toEqual(notes);
+    expect(parsed.task?.description).toBe(description);
+  });
+
+  it('escapes a line that is exactly "## Notes" on write', () => {
+    expect(serializeTask(testTask({ description: 'a\n## Notes\nb' }))).toContain('a\n\\## Notes\nb');
+  });
+});

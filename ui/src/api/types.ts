@@ -6,7 +6,7 @@ export interface TransitionInfo { from:string; to:string[]; requires:string[]; }
 export interface BoardInfo { name:string; guide:string|null; columns:ColumnInfo[]; fields:FieldInfo[]; transitions:TransitionInfo[]|null; }
 export interface ProjectInfo { tenant_id:string; project_id:string; name:string; guide:string|null; legacy:boolean; }
 export interface ProjectList { projects:ProjectInfo[]; }
-export interface TaskItem { id:string; title:string; column:string; assignee:string|null; fields:Record<string,FieldValue>; created_at:string; invalid:boolean; errors:string[]; }
+export interface TaskItem { id:string; title:string; column:string; assignee:string|null; agent:string|null; fields:Record<string,FieldValue>; created_at:string; invalid:boolean; errors:string[]; }
 export interface NoteInfo { at:string; by:string; text:string; }
 export interface HistoryInfo { at:string; by:string; from:string|null; to:string; }
 export interface TaskFull extends TaskItem { created_by:string; updated_at:string; description:string; notes:NoteInfo[]; history:HistoryInfo[]; }

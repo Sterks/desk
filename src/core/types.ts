@@ -66,6 +66,8 @@ export interface Task {
   title: string;
   column: string;
   assignee?: string;
+  /** Полный тип сабагента Claude Code (может содержать `:`). Пишет только хук agent-start. */
+  agent?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -89,6 +91,7 @@ export const BUILTIN_FIELDS = [
   'title',
   'column',
   'assignee',
+  'agent',
   'created_by',
   'created_at',
   'updated_at',

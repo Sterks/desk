@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentInput,
-  cardLine,
+  agentType,
+  assigneeFor,
+  cardText,
   deriveTitle,
   describeRun,
   firstLine,
   parseHookPayload,
-  preToolUseOutput,
+  subagentStartOutput,
   summarizeResponse,
   toAssignee,
   truncate,
@@ -37,17 +39,18 @@ describe('firstLine', () => {
 
 describe('agentInput', () => {
   it('keeps only string fields with expected names', () => {
-    expect(agentInput({ description: 'd', prompt: 'p', subagent_type: 'Explore', model: 1 })).toEqual({
+    expect(agentInput({ description: 'd', prompt: 'p', subagent_type: 'Explore', name: 'scout', model: 1 })).toEqual({
       description: 'd',
       prompt: 'p',
       subagentType: 'Explore',
+      name: 'scout',
     });
   });
 
   it('tolerates non-object input', () => {
     expect(agentInput(null)).toEqual({});
     expect(agentInput('x')).toEqual({});
-    expect(agentInput({ description: 5, prompt: [], subagent_type: {} })).toEqual({});
+    expect(agentInput({ description: 5, prompt: [], subagent_type: {}, name: 1 })).toEqual({});
   });
 });
 
@@ -138,27 +141,34 @@ describe('parseHookPayload', () => {
   });
 });
 
-describe('preToolUseOutput', () => {
-  it('returns the full tool input with the card line appended to the prompt', () => {
-    const input = { description: 'd', prompt: 'Сделай', subagent_type: 'Explore', run_in_background: true };
-    const output = JSON.parse(preToolUseOutput(input, 'T-007', 'Explore') ?? 'null');
-    expect(output).toEqual({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
-        updatedInput: { ...input, prompt: `Сделай${cardLine('T-007', 'Explore')}` },
-      },
-    });
-    expect(input.prompt).toBe('Сделай');
+describe('assigneeFor / agentType', () => {
+  it('prefers the sanitized tool_input.name', () => {
+    expect(assigneeFor({ name: 'lead:reviewer', subagentType: 'ecc:code-reviewer' })).toBe('lead reviewer');
   });
 
-  it('returns null when the prompt is not a string', () => {
-    expect(preToolUseOutput({ description: 'd' }, 'T-001', 'x')).toBeNull();
+  it('falls back to the sanitized subagent type when name is blank or missing', () => {
+    expect(assigneeFor({ name: ' : ', subagentType: 'ecc:code-reviewer' })).toBe('ecc code-reviewer');
+    expect(assigneeFor({ subagentType: 'Explore' })).toBe('Explore');
+    expect(assigneeFor({})).toBe('general-purpose');
   });
 
-  it('builds the card line verbatim', () => {
-    expect(cardLine('T-001', 'Explore')).toBe(
-      '\n\n---\nТвоя карточка на доске desk: T-001. Пиши ход работы через MCP tool add_note(id: "T-001", actor: "Explore"). Не создавай для этой работы новую карточку.',
+  it('keeps the full type for the agent field, single line, up to 100 chars', () => {
+    expect(agentType({ subagentType: ' ecc:code-reviewer ' })).toBe('ecc:code-reviewer');
+    expect(agentType({})).toBe('general-purpose');
+    expect(agentType({ subagentType: `a\nb${'x'.repeat(200)}` })).toHaveLength(100);
+  });
+});
+
+describe('subagentStartOutput', () => {
+  it('builds the card text verbatim', () => {
+    expect(cardText('T-001', 'Explore')).toBe(
+      'Твоя карточка на доске desk: T-001. Пиши ход работы через MCP tool add_note(id: "T-001", actor: "Explore"). Не создавай для этой работы новую карточку.',
     );
+  });
+
+  it('wraps it as SubagentStart additionalContext', () => {
+    expect(JSON.parse(subagentStartOutput('ctx'))).toEqual({
+      hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: 'ctx' },
+    });
   });
 });

@@ -43,3 +43,12 @@ describe('presentLoaded', () => {
     expect(presentLoaded({ id: 'T-009', task: null, errors: ['e'] })).toEqual({ id: 'T-009', unreadable: true, invalid: true, errors: ['e'] });
   });
 });
+
+describe('agent', () => {
+  it('list items and full tasks expose agent (null when absent)', () => {
+    const withAgent = testTask({ id: 'T-001', assignee: 'reviewer', agent: 'ecc:code-reviewer' });
+    const list = presentTaskList(board, [{ id: 'T-001', task: withAgent, errors: [] }, { id: 'T-002', task: testTask({ id: 'T-002' }), errors: [] }], {});
+    expect(list.tasks.map((t) => t.agent)).toEqual(['ecc:code-reviewer', null]);
+    expect(presentLoaded({ id: 'T-001', task: withAgent, errors: [] })).toMatchObject({ agent: 'ecc:code-reviewer', assignee: 'reviewer' });
+  });
+});

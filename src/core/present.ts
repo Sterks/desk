@@ -24,6 +24,7 @@ export interface TaskListItemJson {
   title: string;
   column: string;
   assignee: string | null;
+  agent: string | null;
   fields: Record<string, FieldValue>;
   created_at: string;
   invalid: boolean;
@@ -83,6 +84,7 @@ export function presentListItem(task: Task, errors: readonly string[]): TaskList
     title: task.title,
     column: task.column,
     assignee: task.assignee ?? null,
+    agent: task.agent ?? null,
     fields: task.fields,
     created_at: task.createdAt,
     invalid: errors.length > 0,

@@ -9,6 +9,7 @@ export const ASSIGNEE_GUIDE = 'Имя агента или человека, ко
 
 const MAX_STRING = 200;
 const MAX_ACTOR = 64;
+const MAX_AGENT = 100;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TASK_ID_RE = /^[A-Za-z]+-\d+$/;
 const ACTOR_FORBIDDEN_RE = /[:·\n\r]/;
@@ -109,6 +110,14 @@ export function checkText(value: unknown, name: string): string {
   return value;
 }
 
+/** Тип сабагента: одна строка до 100 символов, `:` допустим. */
+export function checkAgent(value: unknown): string {
+  if (typeof value !== 'string' || /[\r\n]/.test(value) || value.trim() === '' || value.trim().length > MAX_AGENT) {
+    throw new DeskError('INVALID_VALUE', `agent: строка до ${MAX_AGENT} символов без переносов`, { field: 'agent' });
+  }
+  return value.trim();
+}
+
 function checkAssignee(value: unknown): string {
   if (typeof value !== 'string' || value.trim() === '' || value.trim().length > MAX_ACTOR || ACTOR_FORBIDDEN_RE.test(value)) {
     throw new DeskError('INVALID_VALUE', `assignee: строка до ${MAX_ACTOR} символов без ":", "·" и переносов`, {
@@ -205,8 +214,18 @@ export function validateTask(board: Board, task: Task, ctx: ValidationContext): 
       throw e;
     }
   });
+  const agentErrors = (() => {
+    if (task.agent === undefined) return [];
+    try {
+      checkAgent(task.agent);
+      return [];
+    } catch (e) {
+      if (isDeskError(e)) return [e];
+      throw e;
+    }
+  })();
   const requiredErrors = board.fields.filter((f) => f.required && isEmptyValue(task.fields[f.id])).map(requiredError);
-  return [...titleErrors, ...columnErrors, ...fieldErrors, ...requiredErrors];
+  return [...titleErrors, ...columnErrors, ...agentErrors, ...fieldErrors, ...requiredErrors];
 }
 
 export function assertTaskValid(board: Board, task: Task, ctx: ValidationContext): void {

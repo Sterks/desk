@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { DeskError } from '../core/errors.js';
+import { writeFileAtomic } from '../core/fs-atomic.js';
 import { isObject } from './agent-hooks.js';
 import { DESK_HOOKS, type HookEntry } from './templates.js';
 
@@ -52,6 +53,6 @@ export async function installHooks(root: string): Promise<string[]> {
   if (missing.length === 0) return lines;
   const nextHooks = missing.reduce<HookMap>((acc, { event, entry }) => ({ ...acc, [event]: [...(acc[event] ?? []), entry] }), hooks);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify({ ...settings, hooks: nextHooks }, null, 2)}\n`);
+  await writeFileAtomic(path, `${JSON.stringify({ ...settings, hooks: nextHooks }, null, 2)}\n`);
   return [...lines, 'Перезапусти Claude Code, чтобы он подхватил хуки.'];
 }

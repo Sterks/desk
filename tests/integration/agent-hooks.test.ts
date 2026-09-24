@@ -1,110 +1,64 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer, type Server } from 'node:net';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { cardLine } from '../../src/cli/agent-hooks.js';
-import { runCli, type CliIo } from '../../src/cli/run.js';
+import { describe, expect, it } from 'vitest';
+import { cardText } from '../../src/cli/agent-hooks.js';
+import { runCli } from '../../src/cli/run.js';
 import { BOARD_TEMPLATE } from '../../src/cli/templates.js';
 import { loadBoard } from '../../src/core/board-loader.js';
-import { createTask, loadAll, moveTask, readableTasks } from '../../src/core/task-store.js';
-import type { Task } from '../../src/core/types.js';
+import { createTask, moveTask } from '../../src/core/task-store.js';
+import {
+  hook,
+  hookIo,
+  postToolUse,
+  preToolUse,
+  runs,
+  runsFile,
+  subagentStart,
+  subagentStop,
+  taskFiles,
+  tasks,
+} from '../helpers/hooks.js';
 import { makeEmptyDir, makeProject } from '../helpers/project.js';
 
-type TestIo = CliIo & { outLines: string[]; errLines: string[] };
-
-function io(cwd: string, stdin = '', env: NodeJS.ProcessEnv = {}): TestIo {
-  const outLines: string[] = [];
-  const errLines: string[] = [];
-  return {
-    cwd,
-    env,
-    out: (line) => outLines.push(line),
-    err: (line) => errLines.push(line),
-    readStdin: async () => stdin,
-    outLines,
-    errLines,
-  };
-}
-
-const runsFile = (root: string): string => join(root, '.desk', '.agent-runs.json');
-
-function preToolUse(cwd: string, overrides: Record<string, unknown> = {}, toolInput: Record<string, unknown> = {}): string {
-  return JSON.stringify({
-    session_id: 's1',
-    transcript_path: '/tmp/t.jsonl',
-    cwd,
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Agent',
-    tool_input: { description: 'Найти эндпоинты', prompt: 'Найди все API эндпоинты в src/', subagent_type: 'Explore', ...toolInput },
-    tool_use_id: 'toolu_1',
-    ...overrides,
-  });
-}
-
-function postToolUse(cwd: string, response: unknown, overrides: Record<string, unknown> = {}): string {
-  return JSON.stringify({
-    session_id: 's1',
-    cwd,
-    hook_event_name: 'PostToolUse',
-    tool_name: 'Agent',
-    tool_input: { description: 'Найти эндпоинты', prompt: 'x', subagent_type: 'Explore' },
-    tool_response: response,
-    tool_use_id: 'toolu_1',
-    ...overrides,
-  });
-}
-
-async function tasks(root: string): Promise<Task[]> {
-  return readableTasks(await loadAll(root, await loadBoard(root)));
-}
-
-async function taskFiles(root: string): Promise<string[]> {
-  return (await readdir(join(root, '.desk', 'tasks'))).filter((name) => name.endsWith('.md'));
-}
-
-async function runs(root: string): Promise<Record<string, { task: string; agent_id?: string }>> {
-  return JSON.parse(await readFile(runsFile(root), 'utf8'));
-}
-
-async function start(root: string, stdin = preToolUse(root)): Promise<TestIo> {
-  const x = io(root, stdin);
-  expect(await runCli(['hook', 'agent-start'], x)).toBe(0);
-  return x;
-}
+const start = (root: string, stdin = preToolUse(root), now?: string) => hook('agent-start', root, stdin, now);
+const attach = (root: string, stdin: string) => hook('agent-attach', root, stdin);
+const end = (root: string, stdin: string) => hook('agent-end', root, stdin);
 
 describe('desk hook agent-start', () => {
-  it('creates a card in in_progress assigned to the subagent type and records the run', async () => {
+  it('creates a card in in_progress, records the run and prints nothing', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
-    const x = await start(root);
+    const x = await start(root, preToolUse(root), '2026-09-24T10:00:00Z');
     const [task] = await tasks(root);
-    expect(task).toMatchObject({ id: 'T-001', title: 'Найти эндпоинты', column: 'in_progress', assignee: 'Explore', createdBy: 'claude-code' });
+    expect(task).toMatchObject({ id: 'T-001', title: 'Найти эндпоинты', column: 'in_progress', assignee: 'Explore', agent: 'Explore', createdBy: 'claude-code' });
     expect(task?.description).toBe('**Сабагент:** Explore\n\nНайди все API эндпоинты в src/');
-    expect((await runs(root)).toolu_1?.task).toBe('T-001');
+    expect((await runs(root)).toolu_1).toEqual({
+      task: 'T-001',
+      created_at: '2026-09-24T10:00:00Z',
+      session_id: 's1',
+      subagent_type: 'Explore',
+      assignee: 'Explore',
+    });
+    expect(x.outLines).toEqual([]);
     expect(x.errLines).toEqual([]);
   });
 
-  it('prints PreToolUse JSON whose updatedInput.prompt ends with the card line', async () => {
+  it('uses tool_input.name as assignee and keeps the full type in agent', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
-    const x = await start(root, preToolUse(root, {}, { run_in_background: true }));
-    expect(x.outLines).toHaveLength(1);
-    const output = JSON.parse(x.outLines[0] ?? '');
-    expect(output.hookSpecificOutput.hookEventName).toBe('PreToolUse');
-    expect(output.hookSpecificOutput.permissionDecision).toBe('allow');
-    expect(output.hookSpecificOutput.updatedInput).toEqual({
-      description: 'Найти эндпоинты',
-      subagent_type: 'Explore',
-      run_in_background: true,
-      prompt: `Найди все API эндпоинты в src/${cardLine('T-001', 'Explore')}`,
-    });
+    await start(root, preToolUse(root, {}, { subagent_type: 'ecc:code-reviewer', name: 'reviewer-1' }));
+    expect((await tasks(root))[0]).toMatchObject({ assignee: 'reviewer-1', agent: 'ecc:code-reviewer' });
+  });
+
+  it('without name the assignee is the sanitized type and agent the full type', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root, preToolUse(root, {}, { subagent_type: 'ecc:code-reviewer' }));
+    expect((await tasks(root))[0]).toMatchObject({ assignee: 'ecc code-reviewer', agent: 'ecc:code-reviewer' });
   });
 
   it('accepts the legacy Task tool name and defaults the type to general-purpose', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
     await start(root, preToolUse(root, { tool_name: 'Task' }, { subagent_type: undefined }));
-    const [task] = await tasks(root);
-    expect(task?.assignee).toBe('general-purpose');
-    expect(task?.description.startsWith('**Сабагент:** general-purpose')).toBe(true);
+    expect((await tasks(root))[0]).toMatchObject({ assignee: 'general-purpose', agent: 'general-purpose' });
   });
 
   it.each([
@@ -121,16 +75,14 @@ describe('desk hook agent-start', () => {
 
   it('does nothing when no .desk is found from the payload cwd', async () => {
     const dir = await makeEmptyDir();
-    const x = io(dir, preToolUse(dir));
-    expect(await runCli(['hook', 'agent-start'], x)).toBe(0);
+    const x = await start(dir, preToolUse(dir));
     expect(x.outLines).toEqual([]);
     expect(existsSync(join(dir, '.desk'))).toBe(false);
   });
 
   it('resolves the project from the payload cwd, not the process cwd', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
-    const elsewhere = await makeEmptyDir();
-    const x = io(elsewhere, preToolUse(join(root)));
+    const x = hookIo(await makeEmptyDir(), preToolUse(root));
     expect(await runCli(['hook', 'agent-start'], x)).toBe(0);
     expect(await tasks(root)).toHaveLength(1);
   });
@@ -149,24 +101,18 @@ describe('desk hook agent-start', () => {
     expect((await runs(root)).toolu_1?.task).toBe(card?.id);
   });
 
-  it('skips the move on a one-column board', async () => {
-    const root = await makeProject('version: 1\ncolumns:\n  - id: todo\n    title: Todo\n');
-    await start(root);
-    const [task] = await tasks(root);
-    expect(task?.column).toBe('todo');
-    expect(task?.notes).toEqual([]);
-  });
-
-  it('uses the second column when there is no in_progress column', async () => {
-    const root = await makeProject('version: 1\ncolumns:\n  - id: todo\n    title: Todo\n  - id: doing\n    title: Doing\n  - id: finished\n    title: Finished\n');
-    await start(root);
-    expect((await tasks(root))[0]?.column).toBe('doing');
+  it('skips the move on a one-column board and uses the second column without in_progress', async () => {
+    const one = await makeProject('version: 1\ncolumns:\n  - id: todo\n    title: Todo\n');
+    await start(one);
+    expect((await tasks(one))[0]).toMatchObject({ column: 'todo', notes: [] });
+    const three = await makeProject('version: 1\ncolumns:\n  - id: todo\n  - id: doing\n  - id: finished\n');
+    await start(three);
+    expect((await tasks(three))[0]?.column).toBe('doing');
   });
 
   it('derives the title from the prompt and truncates long prompts', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
-    const prompt = `\n\nПроверь миграции\n${'x'.repeat(3000)}`;
-    await start(root, preToolUse(root, {}, { description: '  ', prompt }));
+    await start(root, preToolUse(root, {}, { description: '  ', prompt: `\n\nПроверь миграции\n${'x'.repeat(3000)}` }));
     const [task] = await tasks(root);
     expect(task?.title).toBe('Проверь миграции');
     const body = task?.description.split('\n\n').slice(1).join('\n\n') ?? '';
@@ -176,13 +122,27 @@ describe('desk hook agent-start', () => {
 
   it('keeps at most 500 run entries', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
-    const old = Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`old_${i}`, { task: 'T-999', at: '2026-01-01T00:00:00Z' }]));
-    await writeFile(runsFile(root), JSON.stringify(old));
-    await start(root);
+    const entry = { task: 'T-999', created_at: '2026-09-24T09:00:00Z', subagent_type: 'x', assignee: 'x', agent_id: 'a' };
+    await writeFile(runsFile(root), JSON.stringify(Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`old_${i}`, entry]))));
+    await start(root, preToolUse(root), '2026-09-24T10:00:00Z');
     const map = await runs(root);
     expect(Object.keys(map)).toHaveLength(500);
     expect(map.old_0).toBeUndefined();
     expect(map.toolu_1?.task).toBe('T-001');
+  });
+
+  it('sweeps unconfirmed runs older than 6 hours', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root, preToolUse(root, { tool_use_id: 'attached' }), '2026-09-24T00:00:00Z');
+    await attach(root, subagentStart(root, 'agent-x'));
+    await start(root, preToolUse(root, { tool_use_id: 'old' }), '2026-09-24T00:00:00Z');
+    await start(root, preToolUse(root, { tool_use_id: 'recent' }), '2026-09-24T02:00:00Z');
+    await start(root, preToolUse(root, { tool_use_id: 'new' }), '2026-09-24T07:00:00Z');
+    expect(Object.keys(await runs(root))).toEqual(['attached', 'recent', 'new']);
+    const byId = new Map((await tasks(root)).map((t) => [t.id, t]));
+    expect(byId.get('T-001')?.notes.map((n) => n.text)).toEqual(['hook: сабагент запущен (agent-x)']);
+    expect(byId.get('T-002')?.notes.map((n) => n.text)).toEqual(['hook: запуск не подтверждён']);
+    expect(byId.get('T-003')?.notes).toEqual([]);
   });
 
   it('warns about a corrupt run map and rewrites it', async () => {
@@ -201,21 +161,80 @@ describe('desk hook agent-start', () => {
   });
 });
 
-describe('desk hook agent-end', () => {
-  async function end(root: string, stdin: string): Promise<TestIo> {
-    const x = io(root, stdin);
-    expect(await runCli(['hook', 'agent-end'], x)).toBe(0);
-    return x;
-  }
+describe('desk hook agent-attach (SubagentStart)', () => {
+  it('attaches the agent, notes the start and prints the card line as additionalContext', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    const x = await attach(root, subagentStart(root, 'agent-abc'));
+    expect(x.outLines.map((line) => JSON.parse(line))).toEqual([
+      { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: cardText('T-001', 'Explore') } },
+    ]);
+    expect((await runs(root)).toolu_1?.agent_id).toBe('agent-abc');
+    expect((await tasks(root))[0]?.notes.map((n) => n.text)).toEqual(['hook: сабагент запущен (agent-abc)']);
+  });
 
+  it('uses the assignee from tool_input.name in the card line', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root, preToolUse(root, {}, { subagent_type: 'ecc:code-reviewer', name: 'rev' }));
+    const x = await attach(root, subagentStart(root, 'a1', 'ecc:code-reviewer'));
+    expect(JSON.parse(x.outLines[0] ?? '').hookSpecificOutput.additionalContext).toBe(cardText('T-001', 'rev'));
+  });
+
+  it('picks the oldest pending run of the same session and type', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root, preToolUse(root, { tool_use_id: 'u1' }));
+    await start(root, preToolUse(root, { tool_use_id: 'u2' }));
+    await start(root, preToolUse(root, { tool_use_id: 'u3' }, { subagent_type: 'Plan' }));
+    await attach(root, subagentStart(root, 'first'));
+    await attach(root, subagentStart(root, 'second'));
+    await attach(root, subagentStart(root, 'plan', 'Plan'));
+    const map = await runs(root);
+    expect([map.u1?.agent_id, map.u2?.agent_id, map.u3?.agent_id]).toEqual(['first', 'second', 'plan']);
+  });
+
+  it('normalizes a missing type to general-purpose', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root, preToolUse(root, {}, { subagent_type: undefined }));
+    await attach(root, subagentStart(root, 'gp', ''));
+    expect((await runs(root)).toolu_1?.agent_id).toBe('gp');
+  });
+
+  it.each([
+    ['another session', (root: string) => subagentStart(root, 'z', 'Explore', { session_id: 's2' })],
+    ['another type', (root: string) => subagentStart(root, 'z', 'Plan')],
+    ['no agent_id', (root: string) => JSON.stringify({ session_id: 's1', cwd: root, hook_event_name: 'SubagentStart', agent_type: 'Explore' })],
+    ['invalid JSON', () => 'nope'],
+  ])('prints nothing for %s', async (_name, payload) => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    const x = await attach(root, payload(root));
+    expect(x.outLines).toEqual([]);
+    expect((await runs(root)).toolu_1?.agent_id).toBeUndefined();
+  });
+
+  it('does not re-attach an already attached run', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    await attach(root, subagentStart(root, 'one'));
+    const x = await attach(root, subagentStart(root, 'two'));
+    expect(x.outLines).toEqual([]);
+    expect((await runs(root)).toolu_1?.agent_id).toBe('one');
+  });
+
+  it('does nothing without .desk', async () => {
+    const dir = await makeEmptyDir();
+    expect((await attach(dir, subagentStart(dir, 'a'))).outLines).toEqual([]);
+  });
+});
+
+describe('desk hook agent-end', () => {
   it('adds a note and moves the card to done when the board allows it', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
     await start(root);
     const x = await end(root, postToolUse(root, 'Нашёл 12 эндпоинтов\nподробности'));
     const [task] = await tasks(root);
     expect(task?.column).toBe('done');
-    expect(task?.notes.map((n) => n.text)).toEqual(['hook: сабагент завершил работу — Нашёл 12 эндпоинтов']);
-    expect(task?.notes[0]?.by).toBe('claude-code');
+    expect(task?.notes.map((n) => [n.by, n.text])).toEqual([['claude-code', 'hook: сабагент завершил работу — Нашёл 12 эндпоинтов']]);
     expect((await runs(root)).toolu_1).toBeUndefined();
     expect(x.outLines).toEqual([]);
   });
@@ -240,28 +259,78 @@ describe('desk hook agent-end', () => {
     expect((await tasks(root))[0]?.notes[0]?.text).toBe('hook: сабагент завершил работу — Готово');
   });
 
-  it('keeps a background run open until SubagentStop arrives', async () => {
+  it('SubagentStart → SubagentStop without PostToolUse closes the card', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
     await start(root);
-    await end(root, postToolUse(root, { status: 'async_launched', agentId: 'abc123', description: 'd', prompt: 'p' }));
-    let [task] = await tasks(root);
-    expect(task?.column).toBe('in_progress');
-    expect(task?.notes.map((n) => n.text)).toEqual(['hook: сабагент запущен в фоне (agent abc123)']);
-    expect((await runs(root)).toolu_1?.agent_id).toBe('abc123');
-
-    const stop = JSON.stringify({ cwd: root, hook_event_name: 'SubagentStop', agent_id: 'agent-abc123', agent_type: 'Explore', last_assistant_message: 'Фон готов' });
-    await end(root, stop);
-    [task] = await tasks(root);
+    await attach(root, subagentStart(root, 'agent-abc'));
+    await end(root, subagentStop(root, 'agent-abc', 'Фон готов'));
+    const [task] = await tasks(root);
     expect(task?.column).toBe('done');
     expect(task?.notes.at(-1)?.text).toBe('hook: сабагент завершил работу — Фон готов');
     expect((await runs(root)).toolu_1).toBeUndefined();
   });
 
-  it('ignores SubagentStop for unknown agents', async () => {
+  it('PostToolUse(async_launched) after SubagentStart changes nothing; SubagentStop still closes', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
     await start(root);
-    await end(root, JSON.stringify({ cwd: root, hook_event_name: 'SubagentStop', agent_id: 'zzz', last_assistant_message: 'x' }));
-    expect((await tasks(root))[0]?.column).toBe('in_progress');
+    await attach(root, subagentStart(root, 'agent-abc'));
+    await end(root, postToolUse(root, { status: 'async_launched', agentId: 'abc', description: 'd', prompt: 'p' }));
+    const [launched] = await tasks(root);
+    expect(launched?.column).toBe('in_progress');
+    expect(launched?.notes.map((n) => n.text)).toEqual(['hook: сабагент запущен (agent-abc)']);
+    expect((await runs(root)).toolu_1?.agent_id).toBe('agent-abc');
+    await end(root, subagentStop(root, 'agent-abc'));
+    expect((await tasks(root))[0]?.column).toBe('done');
+  });
+
+  it('async_launched without SubagentStart records agentId as a fallback', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    await end(root, postToolUse(root, { status: 'async_launched', agentId: 'abc123' }));
+    expect((await runs(root)).toolu_1?.agent_id).toBe('abc123');
+    await end(root, subagentStop(root, 'agent-abc123'));
+    expect((await tasks(root))[0]?.column).toBe('done');
+  });
+
+  it('a late PostToolUse after SubagentStop closed the run does nothing', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    await attach(root, subagentStart(root, 'a'));
+    await end(root, subagentStop(root, 'a'));
+    await end(root, postToolUse(root, 'late'));
+    expect((await tasks(root))[0]?.notes).toHaveLength(2);
+  });
+
+  it('SubagentStop for a foreground run without agent_id does nothing', async () => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    await end(root, subagentStop(root, 'agent-unknown'));
+    const [task] = await tasks(root);
+    expect(task).toMatchObject({ column: 'in_progress', notes: [] });
+    expect((await runs(root)).toolu_1).toBeDefined();
+  });
+
+  it.each([
+    ['PostToolUseFailure', { error: 'Agent crashed\nstack' }, 'hook: вызов не выполнен — Agent crashed'],
+    ['PermissionDenied', { reason: '[Data Exfiltration]' }, 'hook: вызов не выполнен — [Data Exfiltration]'],
+    ['PermissionDenied', {}, 'hook: вызов не выполнен — причина не указана'],
+  ])('%s moves the card back to the first column', async (event, extra, note) => {
+    const root = await makeProject(BOARD_TEMPLATE);
+    await start(root);
+    await end(root, postToolUse(root, undefined, { hook_event_name: event, ...extra }));
+    const [task] = await tasks(root);
+    expect(task?.column).toBe('backlog');
+    expect(task?.notes.map((n) => n.text)).toEqual([note]);
+    expect((await runs(root)).toolu_1).toBeUndefined();
+  });
+
+  it('a failure on a board without the way back leaves a "move manually" note', async () => {
+    const root = await makeProject('version: 1\ncolumns:\n  - id: todo\n  - id: doing\n  - id: done\ntransitions:\n  - from: todo\n    to: doing\n  - from: doing\n    to: done\n');
+    await start(root);
+    await end(root, postToolUse(root, undefined, { hook_event_name: 'PostToolUseFailure', error: 'boom' }));
+    const [task] = await tasks(root);
+    expect(task?.column).toBe('doing');
+    expect(task?.notes.map((n) => n.text)).toEqual(['hook: вызов не выполнен — boom', expect.stringMatching(/^hook: перенеси вручную — Переход doing → todo запрещён/)]);
   });
 
   it.each([
@@ -273,9 +342,7 @@ describe('desk hook agent-end', () => {
     await start(root);
     const x = await end(root, payload(root));
     expect(x.outLines).toEqual([]);
-    const [task] = await tasks(root);
-    expect(task?.notes).toEqual([]);
-    expect(task?.column).toBe('in_progress');
+    expect((await tasks(root))[0]).toMatchObject({ column: 'in_progress', notes: [] });
   });
 
   it('does nothing without a mapping file or .desk', async () => {
@@ -283,111 +350,13 @@ describe('desk hook agent-end', () => {
     await end(root, postToolUse(root, 'x'));
     expect(await taskFiles(root)).toEqual([]);
     const dir = await makeEmptyDir();
-    const x = await end(dir, postToolUse(dir, 'x'));
-    expect(x.outLines).toEqual([]);
+    expect((await end(dir, postToolUse(dir, 'x'))).outLines).toEqual([]);
   });
-});
 
-describe('desk hook (usage)', () => {
   it('rejects an unknown hook name without blocking', async () => {
     const root = await makeProject(BOARD_TEMPLATE);
-    const x = io(root, preToolUse(root));
-    expect(await runCli(['hook', 'bogus'], x)).toBe(0);
-    expect(x.errLines.join()).toContain('agent-start');
+    const x = await hook('bogus', root, preToolUse(root));
+    expect(x.errLines.join()).toContain('agent-attach');
     expect(await taskFiles(root)).toEqual([]);
-  });
-});
-
-describe('desk hooks install', () => {
-  const settingsPath = (root: string): string => join(root, '.claude', 'settings.json');
-  const commands = (settings: { hooks: Record<string, { hooks: { command: string }[] }[]> }, event: string): string[] =>
-    (settings.hooks[event] ?? []).flatMap((entry) => entry.hooks.map((h) => h.command));
-
-  it('creates .claude/settings.json with the hook entries', async () => {
-    const root = await makeProject(BOARD_TEMPLATE);
-    const x = io(root);
-    expect(await runCli(['hooks', 'install'], x)).toBe(0);
-    const settings = JSON.parse(await readFile(settingsPath(root), 'utf8'));
-    expect(settings.hooks.PreToolUse).toEqual([
-      { matcher: 'Agent|Task', hooks: [{ type: 'command', command: 'desk hook agent-start', timeout: 10 }] },
-    ]);
-    expect(settings.hooks.PostToolUse).toEqual([
-      { matcher: 'Agent|Task', hooks: [{ type: 'command', command: 'desk hook agent-end', timeout: 10 }] },
-    ]);
-    expect(settings.hooks.SubagentStop).toEqual([{ hooks: [{ type: 'command', command: 'desk hook agent-end', timeout: 10 }] }]);
-    expect(x.outLines.join('\n')).toContain('PreToolUse');
-  });
-
-  it('is idempotent and preserves unrelated settings and hooks', async () => {
-    const root = await makeProject(BOARD_TEMPLATE);
-    await mkdir(join(root, '.claude'));
-    const existing = {
-      permissions: { allow: ['Bash(ls)'] },
-      hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo hi' }] }], Stop: [{ hooks: [{ type: 'command', command: 'say done' }] }] },
-    };
-    await writeFile(settingsPath(root), JSON.stringify(existing));
-    expect(await runCli(['hooks', 'install'], io(root))).toBe(0);
-    const second = io(root);
-    expect(await runCli(['hooks', 'install'], second)).toBe(0);
-    const settings = JSON.parse(await readFile(settingsPath(root), 'utf8'));
-    expect(settings.permissions).toEqual(existing.permissions);
-    expect(settings.hooks.Stop).toEqual(existing.hooks.Stop);
-    expect(commands(settings, 'PreToolUse')).toEqual(['echo hi', 'desk hook agent-start']);
-    expect(commands(settings, 'PostToolUse')).toEqual(['desk hook agent-end']);
-    expect(commands(settings, 'SubagentStop')).toEqual(['desk hook agent-end']);
-    expect(second.outLines.join('\n')).toContain('уже');
-  });
-
-  it('fails on invalid JSON and leaves the file untouched', async () => {
-    const root = await makeProject(BOARD_TEMPLATE);
-    await mkdir(join(root, '.claude'));
-    await writeFile(settingsPath(root), '{ broken');
-    const x = io(root);
-    expect(await runCli(['hooks', 'install'], x)).toBe(1);
-    expect(x.errLines.join()).toContain('settings.json');
-    expect(await readFile(settingsPath(root), 'utf8')).toBe('{ broken');
-  });
-
-  it('fails when hooks has the wrong shape', async () => {
-    const root = await makeProject(BOARD_TEMPLATE);
-    await mkdir(join(root, '.claude'));
-    await writeFile(settingsPath(root), '{"hooks":{"PreToolUse":{}}}');
-    expect(await runCli(['hooks', 'install'], io(root))).toBe(1);
-    expect(await readFile(settingsPath(root), 'utf8')).toBe('{"hooks":{"PreToolUse":{}}}');
-  });
-
-  it('rejects unknown subcommands', async () => {
-    const root = await makeProject(BOARD_TEMPLATE);
-    const x = io(root);
-    expect(await runCli(['hooks', 'remove'], x)).toBe(1);
-    expect(existsSync(settingsPath(root))).toBe(false);
-  });
-
-  it('desk init --hooks installs hooks after init', async () => {
-    const root = await makeEmptyDir();
-    const x = io(root);
-    expect(await runCli(['init', '--hooks'], x)).toBe(0);
-    const settings = JSON.parse(await readFile(settingsPath(root), 'utf8'));
-    expect(commands(settings, 'PreToolUse')).toEqual(['desk hook agent-start']);
-  });
-});
-
-describe('desk ui', () => {
-  let blocker: Server | undefined;
-  afterEach(async () => {
-    await new Promise<void>((resolve) => (blocker ? blocker.close(() => resolve()) : resolve()));
-    blocker = undefined;
-  });
-
-  it('prints a one-line error when the port is busy', async () => {
-    const root = await makeProject(BOARD_TEMPLATE);
-    const server = createServer();
-    blocker = server;
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-    const address = server.address();
-    const port = typeof address === 'object' && address ? address.port : 0;
-    const x = io(root, '', { DESK_ROOT: root });
-    expect(await runCli(['ui', '--port', String(port)], x)).toBe(1);
-    expect(x.errLines).toEqual([`Порт ${port} занят. Запусти desk ui --port <другой порт>.`]);
   });
 });

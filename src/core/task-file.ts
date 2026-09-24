@@ -4,6 +4,8 @@ import { BUILTIN_FIELDS, type FieldValue, type HistoryEntry, type Note, type Tas
 const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 const NOTES_HEADING = '## Notes';
 const NOTE_RE = /^- (\S+) · ([^:]+): (.*)$/;
+/** Строка описания, совпадающая с заголовком заметок (с любым числом ведущих `\`), экранируется ещё одним `\`. */
+const ESCAPABLE_RE = /^(\\*)## Notes$/;
 const BUILTIN = new Set<string>(BUILTIN_FIELDS);
 
 export interface ParsedTaskFile {
@@ -44,6 +46,8 @@ export function parseTaskFile(text: string, fileId: string): ParsedTaskFile {
   if (fm.assignee !== undefined && fm.assignee !== null && assignee === undefined) {
     errors.push('assignee: ожидается строка');
   }
+  const agent = typeof fm.agent === 'string' && fm.agent !== '' ? fm.agent : undefined;
+  if (fm.agent !== undefined && fm.agent !== null && agent === undefined) errors.push('agent: ожидается строка');
   const history = parseHistory(fm.history, errors);
   const fields = Object.fromEntries(
     Object.entries(fm)
@@ -61,6 +65,7 @@ export function parseTaskFile(text: string, fileId: string): ParsedTaskFile {
     title,
     column,
     ...(assignee === undefined ? {} : { assignee }),
+    ...(agent === undefined ? {} : { agent }),
     createdBy,
     createdAt,
     updatedAt,
@@ -105,19 +110,30 @@ export function splitBody(body: string): { description: string; notes: Note[] } 
   const marker = `\n${NOTES_HEADING}\n`;
   const padded = `\n${body}`;
   const index = padded.lastIndexOf(marker);
-  if (index === -1) return { description: body.trim(), notes: [] };
+  if (index === -1) return { description: unescapeDescription(body.trim()), notes: [] };
 
   const lines = padded
     .slice(index + marker.length)
     .split('\n')
     .filter((line) => line.trim() !== '');
   const matches = lines.map((line) => NOTE_RE.exec(line));
-  if (matches.length === 0 || matches.some((m) => m === null)) return { description: body.trim(), notes: [] };
+  if (matches.length === 0 || matches.some((m) => m === null)) return { description: unescapeDescription(body.trim()), notes: [] };
 
   return {
-    description: padded.slice(0, index).trim(),
+    description: unescapeDescription(padded.slice(0, index).trim()),
     notes: matches.map((m) => ({ at: m?.[1] ?? '', by: m?.[2] ?? '', text: m?.[3] ?? '' })),
   };
+}
+
+const mapLines = (text: string, fn: (line: string) => string): string => text.split('\n').map(fn).join('\n');
+
+/** `## Notes` в описании пишется как `\## Notes`, чтобы не спутать его с настоящим разделом заметок. */
+export function escapeDescription(text: string): string {
+  return mapLines(text, (line) => (ESCAPABLE_RE.test(line) ? `\\${line}` : line));
+}
+
+export function unescapeDescription(text: string): string {
+  return mapLines(text, (line) => (ESCAPABLE_RE.test(line) && line.startsWith('\\') ? line.slice(1) : line));
 }
 
 export function formatNote(note: Note): string {
@@ -130,6 +146,7 @@ export function serializeTask(task: Task): string {
     title: task.title,
     column: task.column,
     ...(task.assignee === undefined ? {} : { assignee: task.assignee }),
+    ...(task.agent === undefined ? {} : { agent: task.agent }),
     created_by: task.createdBy,
     created_at: task.createdAt,
     updated_at: task.updatedAt,
@@ -142,6 +159,6 @@ export function serializeTask(task: Task): string {
     for (const item of history.items) if (isMap(item)) item.flow = true;
   }
   const notes = task.notes.length > 0 ? `\n\n${NOTES_HEADING}\n${task.notes.map(formatNote).join('\n')}` : '';
-  const body = `${task.description}${notes}`.trim();
+  const body = `${escapeDescription(task.description)}${notes}`.trim();
   return `---\n${doc.toString({ lineWidth: 0 })}---\n${body === '' ? '' : `${body}\n`}`;
 }

@@ -42,6 +42,7 @@ describe('parseBoard', () => {
     ['values у string', base('fields:\n  - id: s\n    type: string\n    values: [a]\n'), 'fields[0].values'],
     ['повтор values', base('fields:\n  - id: e\n    type: enum\n    values: [a, a]\n'), 'fields[0].values'],
     ['встроенное поле', base('fields:\n  - id: title\n    type: string\n'), 'строка 6: fields[0].id'],
+    ['встроенное поле agent', base('fields:\n  - id: agent\n    type: string\n'), 'строка 6: fields[0].id'],
     ['дубликат поля', base('fields:\n  - id: a\n    type: bool\n  - id: a\n    type: bool\n'), 'fields[1].id'],
     ['неизвестный тип', base('fields:\n  - id: a\n    type: money\n'), 'fields[0].type'],
     ['min больше max', base('fields:\n  - id: n\n    type: number\n    min: 5\n    max: 1\n'), 'fields[0].min'],

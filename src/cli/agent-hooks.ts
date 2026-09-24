@@ -9,12 +9,14 @@ const MAX_TITLE = 200;
 const MAX_PROMPT = 1500;
 const MAX_SUMMARY = 300;
 const MAX_ACTOR = 64;
+const MAX_AGENT = 100;
 const ELLIPSIS = '…';
 
 export interface AgentInput {
   description?: string;
   prompt?: string;
   subagentType?: string;
+  name?: string;
 }
 
 export type HookPayload = Record<string, unknown>;
@@ -50,10 +52,12 @@ export function agentInput(toolInput: unknown): AgentInput {
   const description = stringAt(toolInput, 'description');
   const prompt = stringAt(toolInput, 'prompt');
   const subagentType = stringAt(toolInput, 'subagent_type');
+  const name = stringAt(toolInput, 'name');
   return {
     ...(description === undefined ? {} : { description }),
     ...(prompt === undefined ? {} : { prompt }),
     ...(subagentType === undefined ? {} : { subagentType }),
+    ...(name === undefined ? {} : { name }),
   };
 }
 
@@ -62,15 +66,30 @@ export function deriveTitle(input: AgentInput): string {
   return truncate(title, MAX_TITLE);
 }
 
-/** Тип сабагента как assignee/actor: без ":", "·" и переносов, до 64 символов. */
+const cleanActor = (raw: string | undefined): string =>
+  oneLine((raw ?? '').replace(/[:·\r\n]/g, ' ')).slice(0, MAX_ACTOR).trim();
+
+/** Строка как assignee/actor: без ":", "·" и переносов, до 64 символов; пустая — general-purpose. */
 export function toAssignee(raw: string | undefined): string {
-  const cleaned = oneLine((raw ?? '').replace(/[:·\r\n]/g, ' ')).slice(0, MAX_ACTOR).trim();
-  return cleaned || DEFAULT_AGENT_TYPE;
+  return cleanActor(raw) || DEFAULT_AGENT_TYPE;
+}
+
+/** assignee карточки: tool_input.name, иначе тип сабагента (оба очищены). */
+export function assigneeFor(input: AgentInput): string {
+  return cleanActor(input.name) || toAssignee(input.subagentType);
+}
+
+/** Нормализованный полный тип сабагента (с `:`), одна строка до 100 символов. */
+export function normalizeAgentType(raw: string | undefined): string {
+  return truncate(oneLine(raw ?? ''), MAX_AGENT) || DEFAULT_AGENT_TYPE;
+}
+
+export function agentType(input: AgentInput): string {
+  return normalizeAgentType(input.subagentType);
 }
 
 export function describeRun(input: AgentInput): string {
-  const type = input.subagentType?.trim() || DEFAULT_AGENT_TYPE;
-  return `**Сабагент:** ${type}\n\n${truncate((input.prompt ?? '').trim(), MAX_PROMPT)}`;
+  return `**Сабагент:** ${agentType(input)}\n\n${truncate((input.prompt ?? '').trim(), MAX_PROMPT)}`;
 }
 
 function textBlocks(value: unknown): string | null {
@@ -88,24 +107,13 @@ export function summarizeResponse(response: unknown): string {
   return truncate(JSON.stringify(response), MAX_SUMMARY);
 }
 
-export function cardLine(id: string, assignee: string): string {
-  return `\n\n---\nТвоя карточка на доске desk: ${id}. Пиши ход работы через MCP tool add_note(id: "${id}", actor: "${assignee}"). Не создавай для этой работы новую карточку.`;
+export function cardText(id: string, assignee: string): string {
+  return `Твоя карточка на доске desk: ${id}. Пиши ход работы через MCP tool add_note(id: "${id}", actor: "${assignee}"). Не создавай для этой работы новую карточку.`;
 }
 
-/**
- * JSON для stdout PreToolUse: полный tool_input с дописанной строкой карточки.
- * updatedInput заменяет весь ввод инструмента и применяется вместе с permissionDecision.
- */
-export function preToolUseOutput(toolInput: Record<string, unknown>, id: string, assignee: string): string | null {
-  const prompt = toolInput.prompt;
-  if (typeof prompt !== 'string') return null;
-  return JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'allow',
-      updatedInput: { ...toolInput, prompt: `${prompt}${cardLine(id, assignee)}` },
-    },
-  });
+/** stdout SubagentStart: контекст попадает в разговор сабагента до его первого промпта. */
+export function subagentStartOutput(additionalContext: string): string {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext } });
 }
 
 export { isObject };

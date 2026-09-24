@@ -134,3 +134,28 @@ describe('невалидные файлы', () => {
     expect(fixed.fields).toEqual({ priority: 'p2' });
   });
 });
+
+describe('agent (built-in, hook-only)', () => {
+  it('createTask stores agent and it survives reloads and updates', async () => {
+    const root = await makeProject();
+    const board = await loadBoard(root);
+    const task = await createTask(root, board, { title: 'A', agent: 'ecc:code-reviewer' }, 'claude-code', fixedClock());
+    expect(task.agent).toBe('ecc:code-reviewer');
+    await updateTask(root, board, task.id, { title: 'B' }, 'x', fixedClock());
+    expect((await getTask(root, board, task.id)).task?.agent).toBe('ecc:code-reviewer');
+  });
+
+  it('rejects multi-line or too long agent values', async () => {
+    const root = await makeProject();
+    const board = await loadBoard(root);
+    expect((await catchErrorAsync(() => createTask(root, board, { title: 'A', agent: 'a\nb' }, 'p'))).code).toBe('INVALID_VALUE');
+    expect((await catchErrorAsync(() => createTask(root, board, { title: 'A', agent: 'a'.repeat(101) }, 'p'))).code).toBe('INVALID_VALUE');
+  });
+
+  it('agent is not settable through fields', async () => {
+    const root = await makeProject();
+    const board = await loadBoard(root);
+    const task = await createTask(root, board, { title: 'A' }, 'p');
+    expect((await catchErrorAsync(() => updateTask(root, board, task.id, { fields: { agent: 'x' } }, 'p'))).code).toBe('UNKNOWN_FIELD');
+  });
+});

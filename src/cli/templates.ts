@@ -80,11 +80,16 @@ const HOOK_TIMEOUT_S = 10;
 const command = (name: string): HookEntry['hooks'] => [{ type: 'command', command: `desk hook ${name}`, timeout: HOOK_TIMEOUT_S }];
 
 /**
- * Хуки Claude Code для карточек сабагентов. SubagentStop нужен для фоновых сабагентов:
- * для них PostToolUse приходит сразу при запуске (status "async_launched"), а не по завершении.
+ * Хуки Claude Code для карточек сабагентов (без автоодобрения вызовов):
+ * PreToolUse создаёт карточку, SubagentStart связывает её с agent_id и отдаёт сабагенту строку карточки,
+ * PostToolUse/SubagentStop закрывают её, PostToolUseFailure/PermissionDenied возвращают в первую колонку.
+ * Для фоновых сабагентов PostToolUse приходит сразу при запуске (status "async_launched").
  */
 export const DESK_HOOKS: readonly { event: string; entry: HookEntry }[] = [
   { event: 'PreToolUse', entry: { matcher: 'Agent|Task', hooks: command('agent-start') } },
+  { event: 'SubagentStart', entry: { hooks: command('agent-attach') } },
   { event: 'PostToolUse', entry: { matcher: 'Agent|Task', hooks: command('agent-end') } },
+  { event: 'PostToolUseFailure', entry: { matcher: 'Agent|Task', hooks: command('agent-end') } },
+  { event: 'PermissionDenied', entry: { matcher: 'Agent|Task', hooks: command('agent-end') } },
   { event: 'SubagentStop', entry: { hooks: command('agent-end') } },
 ];
