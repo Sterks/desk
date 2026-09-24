@@ -13,6 +13,7 @@ import {
   type PanelState,
 } from '../lib/fields';
 import { formatTime } from '../lib/format';
+import { dialogsOpen } from '../composables/useDialogStack';
 import Markdown from '../ui/Markdown.vue';
 import FieldInput from './FieldInput.vue';
 
@@ -45,10 +46,12 @@ async function load(): Promise<void> {
 watch(() => [props.taskId, props.version], load, { immediate: true });
 
 // React-версия читала `!e.defaultPrevented`: окно поверх панели (Modal) само помечает Escape и
-// останавливает событие. Task 6 ещё не существует (нет composable для стека диалогов), поэтому
-// здесь тот же приём — `preventDefault()` из вложенного окна отменяет закрытие панели снизу.
+// останавливает событие. TNPopup (Task 6) не делает preventDefault на своём Escape-обработчике
+// (`@keydown.esc.exact="handleEscPress"` в popup.vue просто эмитит `close`, событие продолжает
+// всплывать) — поэтому здесь используется общий счётчик открытых диалогов (useDialogStack):
+// пока хотя бы один TNPopup открыт, Escape не должен закрывать панель под ним.
 function onWindowEscape(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && !e.defaultPrevented) emit('close');
+  if (e.key === 'Escape' && dialogsOpen.value === 0) emit('close');
 }
 onMounted(() => window.addEventListener('keydown', onWindowEscape));
 onUnmounted(() => window.removeEventListener('keydown', onWindowEscape));
