@@ -5,10 +5,41 @@ import { DeskError } from '../core/errors.js';
 import { projectTemplate } from '../core/project.js';
 import { boardPath, deskDir, tasksDir } from '../core/paths.js';
 import { BOARD_TEMPLATE, CLAUDE_MD_MARKER, CLAUDE_MD_SNIPPET, DESK_MCP_SERVER } from './templates.js';
-export interface InitOptions { claudeMd: boolean; }
+
+export interface InitOptions {
+  claudeMd: boolean;
+}
+
 type McpConfig = Record<string, unknown> & { mcpServers?: Record<string, unknown> };
-async function optional(path: string): Promise<string | null> { try { return await readFile(path, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; } }
-async function mcpConfig(path: string): Promise<McpConfig> { const text = await optional(path); if (text === null) return {}; try { const value: unknown = JSON.parse(text); if (value === null || typeof value !== 'object' || Array.isArray(value) || ((value as Record<string, unknown>).mcpServers !== undefined && (typeof (value as Record<string, unknown>).mcpServers !== 'object' || (value as Record<string, unknown>).mcpServers === null || Array.isArray((value as Record<string, unknown>).mcpServers)))) throw new Error(); return value as McpConfig; } catch { throw new DeskError('BAD_REQUEST', `${path} — не JSON или неверная структура. Исправь файл и повтори desk init.`); } }
+
+async function optional(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
+function hasInvalidMcpServers(value: Record<string, unknown>): boolean {
+  const servers = value.mcpServers;
+  return servers !== undefined && (typeof servers !== 'object' || servers === null || Array.isArray(servers));
+}
+
+async function mcpConfig(path: string): Promise<McpConfig> {
+  const text = await optional(path);
+  if (text === null) return {};
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value === null || typeof value !== 'object' || Array.isArray(value) || hasInvalidMcpServers(value as Record<string, unknown>)) {
+      throw new Error();
+    }
+    return value as McpConfig;
+  } catch {
+    throw new DeskError('BAD_REQUEST', `${path} — не JSON или неверная структура. Исправь файл и повтори desk init.`);
+  }
+}
+
 export const GITIGNORE_LINES = ['.desk/.lock', '.desk/.agent-runs.json', '.desk/**/*.tmp'] as const;
 
 /** Дописывает в .gitignore недостающие служебные строки desk; возвращает добавленные. */
@@ -36,7 +67,10 @@ export async function initProject(root: string, opts: InitOptions): Promise<stri
   const ignored = await updateGitignore(root);
   await writeFile(mcpPath, `${JSON.stringify({ ...config, mcpServers: { ...(config.mcpServers ?? {}), desk: DESK_MCP_SERVER } }, null, 2)}\n`);
   const changed = claude !== null && !claude.includes(CLAUDE_MD_MARKER);
-  if (changed) await writeFile(claudePath, `${claude}${claude && !claude.endsWith('\n\n') ? (claude.endsWith('\n') ? '\n' : '\n\n') : ''}${CLAUDE_MD_SNIPPET}`);
+  if (changed) {
+    const separator = claude && !claude.endsWith('\n\n') ? (claude.endsWith('\n') ? '\n' : '\n\n') : '';
+    await writeFile(claudePath, `${claude}${separator}${CLAUDE_MD_SNIPPET}`);
+  }
   return [
     'Создан .desk/project.yaml — идентификатор tenant/project.',
     'Создан .desk/board.yaml — опиши колонки, поля и guide для агентов.',
