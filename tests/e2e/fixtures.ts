@@ -68,7 +68,7 @@ export const writeRawTask = (fileId: string, content: string): Promise<void> =>
 export const readTask = (id: string): Promise<string> => readFile(join(TASKS_DIR, `${id}.md`), 'utf8');
 
 export const column = (page: Page, title: string): Locator => page.getByRole('region', { name: title, exact: true });
-/** Стек toast; у live-region dnd-kit тоже role=status, поэтому ищем по имени. */
+/** Стек toast (role=status). Ищем по имени, чтобы не зависеть от других live-region на странице. */
 export const toasts = (page: Page): Locator => page.getByRole('status', { name: 'Уведомления' });
 export const card = (page: Page, id: string): Locator => page.locator('.board').getByTestId(`card-${id}`);
 
@@ -78,7 +78,13 @@ export async function openBoard(page: Page, tasks: SeedTask[]): Promise<void> {
   for (const task of tasks) await expect(card(page, task.id)).toBeVisible();
 }
 
-/** Перетаскивание мышью по шагам: dnd-kit стартует после 5px движения. */
+/**
+ * Перетаскивание мышью по шагам. SortableJS (vue-draggable-plus, без forceFallback) работает на
+ * нативном HTML5 drag-and-drop: Chromium/Firefox/WebKit в Playwright начинают dragstart после
+ * небольшого сдвига с зажатой кнопкой — первый короткий move (5 шагов, 10px) его запускает, второй
+ * (20 шагов) даёт dragover по пути до цели. Порога активации, как у dnd-kit (5px), нет, но эти шаги
+ * проверены на всех трёх браузерах (Task 8 и Task 9) и оставлены как есть.
+ */
 export async function dragTo(page: Page, source: Locator, target: Locator): Promise<void> {
   const from = await source.boundingBox();
   const to = await target.boundingBox();

@@ -4,6 +4,18 @@ import { card, column, dragTo, openBoard, readTask, seed, taskMarkdown, toasts, 
 
 test.describe.configure({ mode: 'serial' });
 
+// Окна requires (TNPopup) ищем через поле внутри, а не через сам диалог: role="dialog" у TNPopup
+// висит на обёртке .tn-popup__block нулевой высоты, и Playwright считает корень диалога скрытым,
+// хотя окно открыто и работает (известная особенность разметки Task 6, та же обходная схема, что
+// в drag.spec.ts). Сам getByRole('dialog', { name }) остаётся областью поиска — имя проверяется.
+// Панель задачи — наш собственный <aside role="dialog">, к ней это не относится.
+//
+// Сценарии, которыми уже владеет drag.spec.ts, здесь не дублируются:
+// - «WIP-лимит: четвёртая задача не попадает в In progress» — там «отказ сервера (WIP-лимит)»,
+//   тот же сценарий плюс проверка, что узел карточки ровно один;
+// - новая проверка «отмена окна requires возвращает карточку» (Review Focus #1) — там «отмена окна
+//   requires: карточка на месте, запроса и записи нет, повторный перенос работает», строго шире.
+
 test('доска показывает колонки из board.yaml и карточки в них', async ({ page }) => {
   await openBoard(page, [
     { id: 'T-001', title: 'Первая', column: 'backlog', priority: 'p0' },
@@ -19,9 +31,9 @@ test('перенос без assignee открывает окно requires и з�
   await openBoard(page, [{ id: 'T-001', title: 'Нужен исполнитель', column: 'backlog' }]);
   await dragTo(page, card(page, 'T-001'), column(page, 'In progress'));
   const dialog = page.getByRole('dialog', { name: 'T-001 → In progress' });
-  await expect(dialog).toBeVisible();
-  // Окно само фокусирует первое поле (после того, как dnd-kit снимет защиту выделения) — ждём фокус.
-  // Только недостающее поле перехода и его guide.
+  await expect(dialog.getByLabel('assignee')).toBeVisible();
+  // Окно само фокусирует первое поле (RequiresDialog.vue, TNPopup фокусирует свой контейнер);
+  // задержки после броска, как у dnd-kit, у SortableJS нет. Только недостающее поле перехода и его guide.
   await expect(dialog.locator('.field-row')).toHaveCount(1);
   await expect(dialog).toContainText('Имя агента или человека, который выполняет задачу.');
   await expect(dialog.getByLabel('assignee')).toBeFocused();
@@ -31,23 +43,33 @@ test('перенос без assignee открывает окно requires и з�
   await expect.poll(() => readTask('T-001')).toContain('assignee: e2e-agent');
 });
 
-test('запрещённый переход: карточка остаётся, toast объясняет причину', async ({ page }) => {
+// Переписан осознанно (task-9-brief, решение (a)): в React/@dnd-kit бросок в запрещённую колонку
+// доходил до сервера, тот отказывал, и toast объяснял причину. Теперь SortableJS-onMove и
+// dragover доски синхронно не принимают бросок в запрещённую колонку — запроса нет, объяснять
+// нечего, карточка просто не покидает исходную колонку. Проверяем это более сильное поведение.
+test('запрещённый переход: бросок не принимается, карточка остаётся, запроса и toast нет', async ({ page }) => {
+  const moves: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.url().endsWith('/move')) moves.push(r.url());
+  });
   await openBoard(page, [{ id: 'T-001', title: 'Сразу в Done нельзя', column: 'backlog' }]);
-  await dragTo(page, card(page, 'T-001'), column(page, 'Done'));
-  await expect(toasts(page)).toContainText('запрещён');
+  const from = await card(page, 'T-001').boundingBox();
+  const to = await column(page, 'Done').boundingBox();
+  if (!from || !to) throw new Error('Нет boundingBox');
+  await page.mouse.move(from.x + from.width / 2, from.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2 + 10, from.y + 22, { steps: 5 });
+  await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 20 });
+  // Жест действительно идёт и указатель над Done: колонка помечена запрещённой, плейсхолдер не вошёл.
+  await expect(column(page, 'Done')).toHaveAttribute('data-drop', 'blocked');
+  await expect(column(page, 'Done').locator('[data-task-id]')).toHaveCount(0);
+  await page.mouse.up();
+  await expect(column(page, 'Done')).toHaveAttribute('data-drop', 'idle');
   await expect(column(page, 'Backlog').getByTestId('card-T-001')).toBeVisible();
-});
-
-test('WIP-лимит: четвёртая задача не попадает в In progress', async ({ page }) => {
-  await openBoard(page, [
-    { id: 'T-001', title: 'A', column: 'in_progress', assignee: 'a' },
-    { id: 'T-002', title: 'B', column: 'in_progress', assignee: 'b' },
-    { id: 'T-003', title: 'C', column: 'in_progress', assignee: 'c' },
-    { id: 'T-004', title: 'D', column: 'backlog', assignee: 'd' },
-  ]);
-  await dragTo(page, card(page, 'T-004'), column(page, 'In progress'));
-  await expect(toasts(page)).toContainText('3 из 3');
-  await expect(column(page, 'Backlog').getByTestId('card-T-004')).toBeVisible();
+  await expect(column(page, 'Done').getByTestId('card-T-001')).toHaveCount(0);
+  await expect(toasts(page).locator('.toast')).toHaveCount(0);
+  expect(moves).toEqual([]);
+  expect(await readTask('T-001')).toContain('column: backlog');
 });
 
 test('задача, которую агент записал в файл, появляется без перезагрузки', async ({ page }) => {
@@ -96,6 +118,23 @@ test('axe: нет нарушений доступности на доске', as
     { id: 'T-001', title: 'Пожар', column: 'backlog', priority: 'p0', assignee: 'backend-agent' },
     { id: 'T-002', title: 'Обычная', column: 'in_progress', assignee: 'frontend-agent' },
   ]);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+// Дополнение к порту: тот же аудит в тёмной теме и со всеми тонами приоритета и состоянием WIP «на
+// лимите» — контраст мелкого текста (11–12px) на кит-овых токенах проверяется в обеих темах.
+test('axe: нет нарушений доступности на доске в тёмной теме, все приоритеты и WIP на лимите', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const inProgress = (id: string, priority: string) => ({ id, title: id, column: 'in_progress', assignee: 'a', priority });
+  await openBoard(page, [
+    { id: 'T-001', title: 'Пожар', column: 'backlog', priority: 'p0', assignee: 'backend-agent', agent: 'ecc:code-reviewer' },
+    inProgress('T-002', 'p1'),
+    inProgress('T-003', 'p2'),
+    inProgress('T-004', 'p3'),
+  ]);
+  await expect(page.locator('html')).toHaveClass(/tn-dark-theme/);
+  await expect(column(page, 'In progress')).toHaveAttribute('data-limit', 'full');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
@@ -193,7 +232,7 @@ test('счётчик WIP: на лимите — full, сверх лимита �
   await expect(column(page, 'In progress')).toHaveAttribute('data-limit', 'over');
   const critical = await page.evaluate(() => {
     const probe = document.createElement('span');
-    probe.style.color = 'var(--color-critical)';
+    probe.style.color = 'var(--wip-over)';
     document.body.append(probe);
     const color = getComputedStyle(probe).color;
     probe.remove();
@@ -226,11 +265,12 @@ test('панель: перенос через выбор колонки откр
   const panel = page.getByRole('dialog', { name: 'T-001' });
   await panel.getByLabel('Колонка').selectOption('in_progress');
   const dialog = page.getByRole('dialog', { name: 'T-001 → In progress' });
-  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('assignee')).toBeVisible();
   await expect(panel.getByLabel('Колонка')).toHaveValue('backlog');
   // Escape закрывает только окно requires, панель остаётся.
   await page.keyboard.press('Escape');
-  await expect(dialog).toBeHidden();
+  await expect(dialog.getByLabel('assignee')).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'T-001 → In progress' })).toHaveCount(0);
   await expect(panel).toBeVisible();
   await panel.getByLabel('Колонка').selectOption('in_progress');
   await expect(dialog.getByLabel('assignee')).toBeFocused();
@@ -296,4 +336,32 @@ test('ошибка отрисовки всего приложения показ
   await page.goto('/');
   await expect(page.getByRole('alert').filter({ hasText: 'Интерфейс desk не отрисовался' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Перезагрузить доску' })).toBeVisible();
+});
+
+// Review Focus #5. Без ручного выбора тема следует за ОС, в том числе когда ОС меняется при открытой
+// вкладке; ручной выбор запоминается (localStorage), переживает перезагрузку и больше не
+// перебивается сменой темы ОС.
+test('тема: следует за ОС без ручного выбора; ручной выбор переопределяет ОС и переживает перезагрузку', async ({ page }) => {
+  const html = page.locator('html');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await openBoard(page, [{ id: 'T-001', title: 'Тема', column: 'backlog' }]);
+  await expect(html).not.toHaveClass(/tn-dark-theme/);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(html).toHaveClass(/tn-dark-theme/);
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(html).not.toHaveClass(/tn-dark-theme/);
+
+  await page.getByRole('button', { name: 'Переключить тему' }).click();
+  await expect(html).toHaveClass(/tn-dark-theme/);
+  await page.reload();
+  await expect(card(page, 'T-001')).toBeVisible();
+  await expect(html).toHaveClass(/tn-dark-theme/);
+  // ОС переключается туда-обратно при активном ручном выборе — тема не должна сдвинуться.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(html).toHaveClass(/tn-dark-theme/);
+  await page.getByRole('button', { name: 'Переключить тему' }).click();
+  await expect(html).not.toHaveClass(/tn-dark-theme/);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(html).not.toHaveClass(/tn-dark-theme/);
 });
