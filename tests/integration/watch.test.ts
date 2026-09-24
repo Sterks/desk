@@ -25,6 +25,13 @@ describe('watchDesk', () => {
     await vi.waitFor(() => expect(events).toContainEqual({ type: 'task_changed', id: 'T-001' }), { timeout: 3000 });
   });
 
+  it('task_changed сразу после ready, без окна стабилизации', async () => {
+    const root = await makeProject();
+    const events = await watch(root);
+    await writeFile(taskPath(root, 'T-003'), 'x');
+    await vi.waitFor(() => expect(events).toContainEqual({ type: 'task_changed', id: 'T-003' }), { timeout: 3000 });
+  });
+
   it('task_removed при удалении', async () => {
     const root = await makeProject();
     await writeFile(taskPath(root, 'T-001'), 'x');
