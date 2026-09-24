@@ -1,6 +1,7 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Board, FieldDef } from '../core/types.js';
 import { ASSIGNEE_GUIDE } from '../core/validate.js';
+import { DEFAULT_LIMIT, MAX_LIMIT } from './tools.js';
 
 type JsonSchema = Record<string, unknown>;
 
@@ -61,13 +62,12 @@ function fieldsSchema(board: Board | null, nullable: boolean): JsonSchema {
   };
 }
 
-const object = (properties: Record<string, JsonSchema>, required: string[] = []): Tool['inputSchema'] =>
-  ({
-    type: 'object',
-    properties,
-    ...(required.length > 0 ? { required } : {}),
-    additionalProperties: false,
-  }) as Tool['inputSchema'];
+const object = (properties: Record<string, JsonSchema>, required: string[] = []): Tool['inputSchema'] => ({
+  type: 'object',
+  properties,
+  ...(required.length > 0 ? { required } : {}),
+  additionalProperties: false,
+});
 
 export function toolDefinitions(board: Board | null): Tool[] {
   const column: JsonSchema = board ? { type: 'string', enum: board.columns.map((c) => c.id) } : { type: 'string' };
@@ -93,7 +93,7 @@ export function toolDefinitions(board: Board | null): Tool[] {
           type: 'object',
           description: 'Точное совпадение по полям, например {"priority":"p0"}. Для multi_enum — значение содержится в массиве.',
         },
-        limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, default: DEFAULT_LIMIT },
       }),
     },
     {
