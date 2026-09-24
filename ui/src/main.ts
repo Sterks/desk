@@ -9,10 +9,10 @@ import './styles/board.css';
 import './styles/panel.css';
 import { createApp } from 'vue';
 import TNLifeUIKit from '@life_uikit/uikit';
-import App from './App.vue';
+import AppRoot from './AppRoot.vue';
 
 const container = document.getElementById('root');
 if (!container) throw new Error('#root не найден в index.html');
-const app = createApp(App);
+const app = createApp(AppRoot);
 app.use(TNLifeUIKit);
 app.mount(container);

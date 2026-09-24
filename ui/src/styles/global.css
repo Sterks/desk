@@ -55,6 +55,48 @@ textarea {
   text-align: center;
 }
 
+/* Restored per Task 7 (Task 4 dropped these as speculative — see 36d7417 — pending App.vue's real
+   header markup). Colors follow spec section 6 / global-constraints.md: no hardcoded hex, only the
+   `--*` aliases tokens.css already maps onto tn-uikit's own `--content-*`/`--background-*`/
+   `--border-*`/`--shadow-*` variables. */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in oklch, var(--board-bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--card-border);
+}
+
+.app-brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.app-mark {
+  font-size: var(--text-lg);
+  color: var(--focus-ring);
+}
+
+.app-brand h1 {
+  margin: 0;
+  font-size: var(--text-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.app-project {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
 .app-main {
   min-width: 0;
 }
@@ -99,5 +141,51 @@ textarea {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* App.vue owns the toast stack directly (matches the React version's `ToastStack` living at the
+   app root, not inside the panel) — ported here from `panel.css` on the React branch, per Task 7. */
+.toasts {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 40;
+  display: grid;
+  gap: var(--space-2);
+  width: min(24rem, calc(100vw - 2rem));
+}
+
+.toast {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--board-bg);
+  background: var(--text);
+  border-left: 3px solid var(--focus-ring);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-lift);
+  animation: rise-in var(--duration-normal) var(--ease-out-expo);
+}
+
+.toast[data-kind='error'] {
+  border-left-color: var(--wip-over);
+}
+
+.toast button {
+  color: inherit;
+  background: none;
+  border: 0;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
