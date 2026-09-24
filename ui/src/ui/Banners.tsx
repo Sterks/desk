@@ -26,7 +26,16 @@ export function Banners({ board, list, error, onOpen }: BannersProps) {
       )}
       {list.invalid_files.length > 0 && (
         <p className="banner banner-error">
-          Не читаются файлы: {list.invalid_files.map((f) => `${f.id} (${f.errors.join('; ')})`).join(', ')}. Запусти desk validate.
+          Не читаются файлы:{' '}
+          {list.invalid_files.map((f) => (
+            <span key={f.id}>
+              <button type="button" onClick={() => onOpen(f.id)}>
+                {f.id}
+              </button>
+              ({f.errors.join('; ')})
+            </span>
+          ))}
+          . Запусти desk validate.
         </p>
       )}
       {orphans.length > 0 && (

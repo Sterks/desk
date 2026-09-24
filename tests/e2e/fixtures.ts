@@ -16,6 +16,8 @@ export interface SeedTask {
   area?: string;
   estimate?: number;
   description?: string;
+  /** Поля, которых нет в board.yaml (например, поле удалили из схемы). */
+  extraFields?: Record<string, string>;
   createdAt?: string;
 }
 
@@ -34,6 +36,7 @@ export function taskMarkdown(task: SeedTask): string {
     `priority: ${task.priority ?? 'p2'}`,
     ...(task.area ? [`area: ${task.area}`] : []),
     ...(task.estimate === undefined ? [] : [`estimate: ${task.estimate}`]),
+    ...Object.entries(task.extraFields ?? {}).map(([key, value]) => `${key}: ${value}`),
     'history:',
     `  - { at: ${at}, by: seed, from: null, to: ${task.column} }`,
     '---',
@@ -59,6 +62,9 @@ export async function seed(tasks: SeedTask[]): Promise<void> {
 }
 
 export const writeTask = (task: SeedTask): Promise<void> => writeFile(join(TASKS_DIR, `${task.id}.md`), taskMarkdown(task));
+/** Файл задачи с произвольным содержимым (битый, дубликат ID с другим именем файла). */
+export const writeRawTask = (fileId: string, content: string): Promise<void> =>
+  writeFile(join(TASKS_DIR, `${fileId}.md`), content);
 export const readTask = (id: string): Promise<string> => readFile(join(TASKS_DIR, `${id}.md`), 'utf8');
 
 export const column = (page: Page, title: string): Locator => page.getByRole('region', { name: title, exact: true });

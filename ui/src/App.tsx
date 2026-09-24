@@ -10,8 +10,9 @@ import { applyFilters } from './lib/filters';
 import { missingForMove } from './lib/transitions';
 import { CreateTaskDialog } from './task-panel/CreateTaskDialog';
 import { RequiresDialog } from './task-panel/RequiresDialog';
-import { TaskPanel } from './task-panel/TaskPanel';
+import { TaskPanel, TaskPanelCrash } from './task-panel/TaskPanel';
 import { Banners } from './ui/Banners';
+import { ErrorBoundary } from './ui/ErrorBoundary';
 import { ToastStack, useToasts } from './ui/Toast';
 
 interface PendingMove {
@@ -68,7 +69,11 @@ export function App() {
       <main className="app-main">
         <Board board={board} tasks={visible} onOpen={openTask} onMove={handleMove} />
       </main>
-      {filters.task && <TaskPanel board={board} taskId={filters.task} version={version} onClose={closeTask} onError={pushToast} onMove={handleMove} />}
+      {filters.task && (
+        <ErrorBoundary key={filters.task} fallback={(message) => <TaskPanelCrash taskId={filters.task ?? ''} message={message} onClose={closeTask} />}>
+          <TaskPanel board={board} taskId={filters.task} version={version} onClose={closeTask} onError={pushToast} onMove={handleMove} />
+        </ErrorBoundary>
+      )}
       {creating && (
         <CreateTaskDialog
           board={board}

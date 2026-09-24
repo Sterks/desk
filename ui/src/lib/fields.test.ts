@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFull } from '../api/types';
-import { buildUpdate, compactFields, defaultsFor, diffFields, fieldInfo, isDirty, mergeFresh, parseNumberInput, rebaseDraft, toDraft } from './fields';
+import { buildUpdate, compactFields, defaultsFor, diffFields, fieldInfo, isDirty, isUnreadable, mergeFresh, parseNumberInput, rebaseDraft, toDraft, undeclaredFields } from './fields';
 import { boardInfo, taskItem } from './test-fixtures';
 
 const task: TaskFull = {
@@ -82,4 +82,24 @@ describe('parseNumberInput', () => {
     ['5.5', 5.5],
     ['-2', -2],
   ])('%j → %j', (text, expected) => expect(parseNumberInput(text)).toBe(expected));
+});
+
+describe('isUnreadable', () => {
+  it('отличает нечитаемый файл от полной задачи', () => {
+    expect(isUnreadable({ id: 'T-007', unreadable: true, invalid: true, errors: ['нет frontmatter'] })).toBe(true);
+    expect(isUnreadable(task)).toBe(false);
+  });
+});
+
+describe('undeclaredFields', () => {
+  it('поля задачи, которых нет в board.yaml, в порядке файла', () => {
+    expect(undeclaredFields(boardInfo(), { priority: 'p2', legacy: 'x', area: ['backend'], old_score: 3 })).toEqual(['legacy', 'old_score']);
+    expect(undeclaredFields(boardInfo(), { priority: 'p2' })).toEqual([]);
+  });
+
+  it('удаление через null попадает в buildUpdate', () => {
+    const stale: TaskFull = { ...task, fields: { priority: 'p2', legacy: 'x' } };
+    const draft = toDraft(stale);
+    expect(buildUpdate(stale, { ...draft, title: 'T', fields: { ...draft.fields, legacy: null } })).toEqual({ title: 'T', fields: { legacy: null } });
+  });
 });

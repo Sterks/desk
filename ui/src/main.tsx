@@ -10,11 +10,27 @@ import './styles/panel.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { ErrorBoundary } from './ui/ErrorBoundary';
+
+const reloadBoard = (): void => window.location.assign(window.location.pathname);
 
 const container = document.getElementById('root');
 if (!container) throw new Error('#root не найден в index.html');
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary
+      fallback={(message) => (
+        <main className="app-state">
+          <div role="alert">
+            <p>Интерфейс desk не отрисовался: {message}</p>
+            <button type="button" className="button" onClick={reloadBoard}>
+              Перезагрузить доску
+            </button>
+          </div>
+        </main>
+      )}
+    >
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

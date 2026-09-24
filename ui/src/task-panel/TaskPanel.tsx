@@ -1,7 +1,17 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { api, errorMessage } from '../api/client';
-import type { BoardInfo, FieldValue, TaskFull, TaskItem } from '../api/types';
-import { ASSIGNEE_FIELD, buildUpdate, isDirty, mergeFresh, toDraft, type PanelState, type TaskDraft } from '../lib/fields';
+import type { BoardInfo, FieldValue, TaskFull, TaskItem, UnreadableTask } from '../api/types';
+import {
+  ASSIGNEE_FIELD,
+  buildUpdate,
+  isDirty,
+  isUnreadable,
+  mergeFresh,
+  toDraft,
+  undeclaredFields,
+  type PanelState,
+  type TaskDraft,
+} from '../lib/fields';
 import { formatTime } from '../lib/format';
 import { Markdown } from '../ui/Markdown';
 import { FieldRow } from './FieldInput';
@@ -18,6 +28,7 @@ export interface TaskPanelProps {
 
 export function TaskPanel({ board, taskId, version, onClose, onError, onMove }: TaskPanelProps) {
   const [state, setState] = useState<PanelState | null>(null);
+  const [unreadable, setUnreadable] = useState<UnreadableTask | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState(false);
   const [note, setNote] = useState('');
@@ -30,6 +41,13 @@ export function TaskPanel({ board, taskId, version, onClose, onError, onMove }: 
       (next) => {
         if (!alive) return;
         setLoadError(null);
+        // Файл не парсится: у ответа нет полей, notes и history — показываем только ошибки.
+        if (isUnreadable(next)) {
+          setUnreadable(next);
+          setState(null);
+          return;
+        }
+        setUnreadable(null);
         setState((prev) => mergeFresh(prev, next));
       },
       (e: unknown) => {
@@ -129,6 +147,18 @@ export function TaskPanel({ board, taskId, version, onClose, onError, onMove }: 
           </button>
         </header>
         {loadError && <p className="banner banner-error">{loadError}</p>}
+        {unreadable && (
+          <div className="panel-body">
+            <p className="banner banner-error">
+              Файл задачи не читается. Исправь .desk/tasks/{unreadable.id}.md вручную и запусти desk validate.
+            </p>
+            <ul className="error-list">
+              {unreadable.errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {state && (
           <>
             <div className="panel-body">
@@ -151,6 +181,21 @@ export function TaskPanel({ board, taskId, version, onClose, onError, onMove }: 
                   {board.fields.map((f) => (
                     <FieldRow key={f.id} def={f} value={state.draft.fields[f.id] ?? undefined} onChange={(v) => setField(f.id, v)} />
                   ))}
+                  {undeclaredFields(board, state.task.fields).map((key) => {
+                    const removed = state.draft.fields[key] === null;
+                    return (
+                      <div key={key} className="field-row stale-field">
+                        <span className="field-label">{key}</span>
+                        <div className="stale-value">
+                          <code>{JSON.stringify(state.task.fields[key])}</code>
+                          <button type="button" className="link-button" disabled={removed} onClick={() => setField(key, null)}>
+                            {removed ? 'удалится при сохранении' : 'удалить'}
+                          </button>
+                        </div>
+                        <p className="field-guide">Поля нет в board.yaml. Удали его — иначе задачу нельзя сохранить.</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
               <section className="panel-section">
@@ -218,6 +263,34 @@ export function TaskPanel({ board, taskId, version, onClose, onError, onMove }: 
             </footer>
           </>
         )}
+      </aside>
+    </>
+  );
+}
+
+export interface TaskPanelCrashProps {
+  taskId: string;
+  message: string;
+  onClose(): void;
+}
+
+/** Запасная панель для ErrorBoundary: доска остаётся рабочей, задачу можно закрыть. */
+export function TaskPanelCrash({ taskId, message, onClose }: TaskPanelCrashProps) {
+  return (
+    <>
+      <div className="panel-backdrop" onMouseDown={onClose} />
+      <aside className="panel" role="dialog" aria-modal="true" aria-label={taskId}>
+        <header className="panel-head">
+          <span className="panel-id">{taskId}</span>
+          <button type="button" className="button panel-close" onClick={onClose} aria-label="Закрыть панель">
+            Esc
+          </button>
+        </header>
+        <div className="panel-body">
+          <p className="banner banner-error" role="alert">
+            Панель задачи не отрисовалась: {message}
+          </p>
+        </div>
       </aside>
     </>
   );

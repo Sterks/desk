@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { card, column, dragTo, openBoard, readTask, seed, toasts, writeTask } from './fixtures';
+import { card, column, dragTo, openBoard, readTask, seed, taskMarkdown, toasts, writeRawTask, writeTask } from './fixtures';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -239,4 +239,61 @@ test('панель: перенос через выбор колонки откр
   await expect(column(page, 'In progress').getByTestId('card-T-001')).toBeVisible();
   await expect(panel.getByLabel('Колонка')).toHaveValue('in_progress');
   await expect.poll(() => readTask('T-001')).toContain('assignee: panel-agent');
+});
+
+test('баннеры invalid_files и duplicate_ids; нечитаемая задача открывается и переживает перезагрузку', async ({ page }) => {
+  await seed([{ id: 'T-001', title: 'Целая', column: 'backlog' }]);
+  await writeRawTask('T-007', '<<<<<<< HEAD\nконфликт слияния\n=======\n>>>>>>> branch\n');
+  await writeRawTask('T-003', taskMarkdown({ id: 'T-003', title: 'Дубль A', column: 'backlog' }));
+  await writeRawTask('T-3', taskMarkdown({ id: 'T-3', title: 'Дубль B', column: 'backlog' }));
+  await page.goto('/');
+  await expect(card(page, 'T-001')).toBeVisible();
+  await expect(page.getByText('Дубликаты ID: T-003 = T-3')).toBeVisible();
+  const invalid = page.getByText('Не читаются файлы:');
+  await expect(invalid).toContainText('T-007');
+
+  await invalid.getByRole('button', { name: 'T-007' }).click();
+  await expect(page).toHaveURL(/task=T-007/);
+  const panel = page.getByRole('dialog', { name: 'T-007' });
+  await expect(panel.getByText('Файл задачи не читается')).toBeVisible();
+  await expect(panel.locator('.error-list li').first()).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Сохранить' })).toHaveCount(0);
+
+  await page.reload();
+  await expect(card(page, 'T-001')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'T-007' }).getByText('Файл задачи не читается')).toBeVisible();
+});
+
+test('панель: поле, удалённое из board.yaml, можно убрать и сохранить задачу', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Со старым полем', column: 'backlog', extraFields: { legacy_flag: 'old' } }]);
+  await card(page, 'T-001').getByRole('button', { name: 'Со старым полем' }).click();
+  const panel = page.getByRole('dialog', { name: 'T-001' });
+  const stale = panel.locator('.stale-field', { hasText: 'legacy_flag' });
+  await expect(stale).toContainText('old');
+  await panel.getByLabel('Название').fill('Новое название');
+  await stale.getByRole('button', { name: 'удалить' }).click();
+  await panel.getByRole('button', { name: 'Сохранить' }).click();
+  await expect.poll(() => readTask('T-001')).toContain('title: Новое название');
+  expect(await readTask('T-001')).not.toContain('legacy_flag');
+  await expect(panel.locator('.stale-field')).toHaveCount(0);
+  await expect(toasts(page)).not.toContainText('не объявлено');
+});
+
+test('ошибка отрисовки панели не роняет доску (error boundary)', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Есть', column: 'backlog' }]);
+  // Неожиданная форма ответа сервера — панель падает при отрисовке.
+  await page.route('**/api/tasks/T-001', (route) => route.fulfill({ json: { ok: true, data: { id: 'T-001' } } }));
+  await page.goto('/?task=T-001');
+  await expect(page.getByRole('alert').filter({ hasText: 'Панель задачи не отрисовалась' })).toBeVisible();
+  await expect(card(page, 'T-001')).toBeVisible();
+  await page.getByRole('button', { name: 'Закрыть панель' }).click();
+  await expect(page).not.toHaveURL(/task=/);
+});
+
+test('ошибка отрисовки всего приложения показывает сообщение, а не пустую страницу', async ({ page }) => {
+  await seed([]);
+  await page.route('**/api/board', (route) => route.fulfill({ json: { ok: true, data: { name: 'broken' } } }));
+  await page.goto('/');
+  await expect(page.getByRole('alert').filter({ hasText: 'Интерфейс desk не отрисовался' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Перезагрузить доску' })).toBeVisible();
 });

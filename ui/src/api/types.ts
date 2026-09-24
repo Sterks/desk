@@ -77,6 +77,14 @@ export interface TaskFull extends TaskItem {
   history: HistoryInfo[];
 }
 
+/** Ответ GET /api/tasks/:id для файла, который не парсится (src/core/present.ts, UnreadableTaskJson). */
+export interface UnreadableTask {
+  id: string;
+  unreadable: true;
+  invalid: true;
+  errors: string[];
+}
+
 export interface TaskList {
   tasks: TaskItem[];
   invalid_files: { id: string; errors: string[] }[];

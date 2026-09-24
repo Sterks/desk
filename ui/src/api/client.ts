@@ -1,4 +1,4 @@
-import type { ApiError, BoardInfo, FieldValue, ProjectInfo, TaskFull, TaskList } from './types';
+import type { ApiError, BoardInfo, FieldValue, ProjectInfo, TaskFull, TaskList, UnreadableTask } from './types';
 
 export class ApiRequestError extends Error {
   readonly error: ApiError;
@@ -42,7 +42,7 @@ export const api = {
   project: () => request<ProjectInfo>('GET', '/api/project'),
   board: () => request<BoardInfo>('GET', '/api/board'),
   tasks: () => request<TaskList>('GET', '/api/tasks'),
-  task: (id: string) => request<TaskFull>('GET', taskUrl(id)),
+  task: (id: string) => request<TaskFull | UnreadableTask>('GET', taskUrl(id)),
   create: (input: { title: string; description?: string; column?: string; fields?: FieldChanges }) =>
     request<TaskFull>('POST', '/api/tasks', input),
   update: (id: string, input: { title?: string; description?: string; fields?: FieldChanges }) =>

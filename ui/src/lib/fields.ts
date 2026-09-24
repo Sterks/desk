@@ -1,4 +1,4 @@
-import type { BoardInfo, FieldInfo, FieldValue, TaskFull } from '../api/types';
+import type { BoardInfo, FieldInfo, FieldValue, TaskFull, UnreadableTask } from '../api/types';
 
 export type Draft = Record<string, FieldValue | null>;
 
@@ -90,4 +90,14 @@ export function rebaseDraft(base: TaskFull, draft: TaskDraft, next: TaskFull): T
 export function mergeFresh(prev: PanelState | null, next: TaskFull): PanelState {
   if (!prev || prev.task.id !== next.id || !isDirty(prev.task, prev.draft)) return { task: next, draft: toDraft(next) };
   return { task: next, draft: rebaseDraft(prev.task, prev.draft, next) };
+}
+
+export function isUnreadable(task: TaskFull | UnreadableTask): task is UnreadableTask {
+  return 'unreadable' in task && task.unreadable === true;
+}
+
+/** Поля задачи, которых нет в board.yaml (например, поле удалили из схемы). Сервер требует их убрать: `{ key: null }`. */
+export function undeclaredFields(board: BoardInfo, fields: Record<string, FieldValue>): string[] {
+  const declared = new Set(board.fields.map((f) => f.id));
+  return Object.keys(fields).filter((key) => !declared.has(key));
 }
