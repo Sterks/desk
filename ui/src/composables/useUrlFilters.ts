@@ -22,7 +22,7 @@ export function useUrlFilters(): UrlFilters {
       const search = filtersToSearch(next);
       if (search !== window.location.search) window.history.replaceState(null, '', `${window.location.pathname}${search}`);
     },
-    { deep: true },
+    { deep: true, immediate: true },
   );
 
   const setFilters = (patch: Partial<Filters>): void => {
