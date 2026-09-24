@@ -1,6 +1,8 @@
-import { basename, dirname } from 'node:path';
-import chokidar from 'chokidar';
-import { DESK_DIR, TASK_FILE_RE, deskDir } from './paths.js';
+import { randomUUID } from 'node:crypto';
+import { rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+import chokidar, { type FSWatcher } from 'chokidar';
+import { DESK_DIR, TASK_FILE_RE, deskDir, tasksDir } from './paths.js';
 
 export type DeskEvent =
   | { type: 'task_changed'; id: string }
@@ -13,6 +15,20 @@ export interface DeskWatcher {
 }
 
 const DEFAULT_DEBOUNCE_MS = 50;
+/** Как часто переписывать пробный файл, пока наблюдатель его не увидит. */
+const PROBE_INTERVAL_MS = 50;
+/** Предел ожидания пробы: дальше `ready` разрешается как есть, чтобы не зависнуть навсегда. */
+const PROBE_TIMEOUT_MS = 5000;
+/**
+ * Chokidar 4 глушит (без повторной доставки) повторный `change` того же пути в течение
+ * 50 мс после предыдущего. Отфильтрованный нами replay тоже занимает это окно, и реальная
+ * правка сразу после `ready` терялась бы, поэтому `ready` ждёт конца окна после replay —
+ * с двукратным запасом: окно отсчитывается в chokidar чуть раньше, чем replay доходит до нас.
+ */
+const CHOKIDAR_CHANGE_THROTTLE_MS = 50;
+const REPLAY_QUIET_MS = 2 * CHOKIDAR_CHANGE_THROTTLE_MS;
+
+const isScratch = (path: string): boolean => path.endsWith('.tmp') || path.endsWith('.lock');
 
 export function watchDesk(
   root: string,
@@ -31,6 +47,11 @@ export function watchDesk(
     );
   };
 
+  // Пробные файлы (по одному на наблюдаемую папку) подтверждают, что наблюдение
+  // реально запущено; см. confirmLive. Имя `*.tmp` — для остальных наблюдателей это мусор.
+  const probeName = `.watch-probe-${randomUUID()}.tmp`;
+  const probes = new Set([join(deskDir(root), probeName), join(tasksDir(root), probeName)]);
+
   // Момент запуска наблюдения: на macOS fsevents может доставить "исторический"
   // `change` для файла, изменённого непосредственно перед стартом (несмотря на
   // ignoreInitial: true) — отличаем его по stats.mtimeMs < startedAt ниже.
@@ -39,18 +60,23 @@ export function watchDesk(
   // миллисекунде, что и старт вотчера, тогда часто ложно не отфильтровывается
   // (mtimeMs с дробной частью оказывается больше усечённого Date.now()).
   const startedAt = performance.timeOrigin + performance.now();
+  let lastReplayAt = Number.NEGATIVE_INFINITY;
   const watcher = chokidar.watch(deskDir(root), {
     ignoreInitial: true,
     alwaysStat: true,
-    ignored: (path: string) => path.endsWith('.tmp') || path.endsWith('.lock'),
+    ignored: (path: string) => isScratch(path) && !probes.has(path),
   });
 
   const handle =
     (kind: 'add' | 'change' | 'unlink') =>
     (path: string, stats?: { mtimeMs: number }): void => {
+      if (probes.has(path)) return;
       // Отбрасываем только "исторический" replay change-события (mtime раньше старта
       // наблюдения); add/unlink никогда не отбрасываются — это всегда реальные изменения.
-      if (kind === 'change' && stats && stats.mtimeMs < startedAt) return;
+      if (kind === 'change' && stats && stats.mtimeMs < startedAt) {
+        lastReplayAt = performance.now();
+        return;
+      }
       const name = basename(path);
       const parent = basename(dirname(path));
       if (name === 'board.yaml' && parent === DESK_DIR) {
@@ -64,14 +90,70 @@ export function watchDesk(
     };
 
   watcher.on('add', handle('add')).on('change', handle('change')).on('unlink', handle('unlink'));
-  const ready = new Promise<void>((resolve) => watcher.once('ready', () => resolve()));
+  const probe = confirmLive(watcher, probes, () => lastReplayAt + REPLAY_QUIET_MS);
+  const ready = new Promise<void>((resolve) => watcher.once('ready', () => resolve())).then(probe.run);
 
   return {
     ready,
     close: async () => {
+      probe.stop();
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();
       await watcher.close();
+    },
+  };
+}
+
+/**
+ * Chokidar сообщает `ready` после обхода папок, но на macOS нативный поток FSEvents
+ * (libuv запускает его асинхронно в отдельном потоке) в этот момент может ещё не
+ * работать, и изменения сразу после `ready` теряются навсегда — особенно под нагрузкой.
+ * Поэтому `ready` ждёт, пока наблюдатель увидит запись пробного файла в каждой
+ * наблюдаемой папке (запись повторяется, пока событие не придёт), затем пробы удаляются.
+ * Папку, куда записать не удалось (нет `tasks/`, только чтение), проверить нечем — пропускаем.
+ * Replay приходит раньше пробы (он старше в том же потоке событий), так что после пробы
+ * остаётся лишь дождаться `quietAt()` — конца окна троттлинга chokidar после replay.
+ */
+function confirmLive(
+  watcher: FSWatcher,
+  probes: ReadonlySet<string>,
+  quietAt: () => number,
+): { run: () => Promise<void>; stop: () => void } {
+  const pending = new Set(probes);
+  let wake: () => void = () => {};
+  let stopped = false;
+  const nudge = (): void => wake();
+  watcher.on('all', (_event: string, path: string) => {
+    if (pending.delete(path) && pending.size === 0) nudge();
+  });
+
+  const run = async (): Promise<void> => {
+    const deadline = performance.now() + PROBE_TIMEOUT_MS;
+    for (let attempt = 0; pending.size > 0 && !stopped && performance.now() < deadline; attempt++) {
+      await Promise.all(
+        [...pending].map((path) => writeFile(path, String(attempt)).catch(() => pending.delete(path))),
+      );
+      if (pending.size === 0) break;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, PROBE_INTERVAL_MS);
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    }
+    await Promise.all([...probes].map((path) => rm(path, { force: true }).catch(() => undefined)));
+    // Цикл, а не один таймер: setTimeout в Node может сработать на ~1 мс раньше срока.
+    while (!stopped && performance.now() < quietAt()) {
+      await new Promise((resolve) => setTimeout(resolve, quietAt() - performance.now() + 1));
+    }
+  };
+
+  return {
+    run,
+    stop: () => {
+      stopped = true;
+      nudge();
     },
   };
 }

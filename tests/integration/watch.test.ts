@@ -1,6 +1,6 @@
-import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { boardPath, taskPath } from '../../src/core/paths.js';
+import { boardPath, deskDir, taskPath, tasksDir } from '../../src/core/paths.js';
 import { watchDesk, type DeskEvent } from '../../src/core/watch.js';
 import { makeProject } from '../helpers/project.js';
 
@@ -55,5 +55,23 @@ describe('watchDesk', () => {
     for (const n of [1, 2, 3]) await writeFile(taskPath(root, 'T-002'), String(n));
     await vi.waitFor(() => expect(events).toContainEqual({ type: 'task_changed', id: 'T-002' }), { timeout: 3000 });
     expect(events).toEqual([{ type: 'task_changed', id: 'T-002' }]);
+  });
+
+  it('ready не оставляет пробных файлов и не шлёт о них событий', async () => {
+    const root = await makeProject();
+    const events = await watch(root);
+    expect((await readdir(deskDir(root))).sort()).toEqual(['board.yaml', 'tasks']);
+    expect(await readdir(tasksDir(root))).toEqual([]);
+    await writeFile(taskPath(root, 'T-004'), 'x');
+    await vi.waitFor(() => expect(events).toContainEqual({ type: 'task_changed', id: 'T-004' }), { timeout: 3000 });
+    expect(events).toEqual([{ type: 'task_changed', id: 'T-004' }]);
+  });
+
+  it('ready разрешается и без папки tasks/', async () => {
+    const root = await makeProject();
+    await rm(tasksDir(root), { recursive: true });
+    const events = await watch(root);
+    await writeFile(boardPath(root), `${await readFile(boardPath(root), 'utf8')}\n`);
+    await vi.waitFor(() => expect(events).toContainEqual({ type: 'board_changed' }), { timeout: 3000 });
   });
 });
