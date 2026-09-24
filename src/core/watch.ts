@@ -24,6 +24,8 @@ const PROBE_TIMEOUT_MS = 5000;
  * 50 мс после предыдущего. Отфильтрованный нами replay тоже занимает это окно, и реальная
  * правка сразу после `ready` терялась бы, поэтому `ready` ждёт конца окна после replay —
  * с двукратным запасом: окно отсчитывается в chokidar чуть раньше, чем replay доходит до нас.
+ * Значение взято из chokidar 4.0.3 (`_throttle(EV.CHANGE, path, 50)` в `_emit`); версия
+ * закреплена в package.json без `^` — при обновлении chokidar перепроверь эту константу.
  */
 const CHOKIDAR_CHANGE_THROTTLE_MS = 50;
 const REPLAY_QUIET_MS = 2 * CHOKIDAR_CHANGE_THROTTLE_MS;
@@ -91,7 +93,13 @@ export function watchDesk(
 
   watcher.on('add', handle('add')).on('change', handle('change')).on('unlink', handle('unlink'));
   const probe = confirmLive(watcher, probes, () => lastReplayAt + REPLAY_QUIET_MS);
-  const ready = new Promise<void>((resolve) => watcher.once('ready', () => resolve())).then(probe.run);
+  // Проба стартует по `ready` chokidar либо сразу при close() до него (тогда только уборка),
+  // так что `ready` разрешается всегда, и close() может дождаться удаления проб.
+  const started = new Promise<void>((resolve) => {
+    watcher.once('ready', () => resolve());
+    probe.onStop(resolve);
+  });
+  const ready = started.then(probe.run);
 
   return {
     ready,
@@ -99,6 +107,7 @@ export function watchDesk(
       probe.stop();
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();
+      await ready;
       await watcher.close();
     },
   };
@@ -118,42 +127,63 @@ function confirmLive(
   watcher: FSWatcher,
   probes: ReadonlySet<string>,
   quietAt: () => number,
-): { run: () => Promise<void>; stop: () => void } {
+): { run: () => Promise<void>; stop: () => void; onStop: (fn: () => void) => void } {
   const pending = new Set(probes);
   let wake: () => void = () => {};
   let stopped = false;
-  const nudge = (): void => wake();
-  watcher.on('all', (_event: string, path: string) => {
-    if (pending.delete(path) && pending.size === 0) nudge();
-  });
+  const stopListeners: (() => void)[] = [];
+  const onProbeEvent = (_event: string, path: string): void => {
+    if (pending.delete(path) && pending.size === 0) wake();
+  };
+  watcher.on('all', onProbeEvent);
 
-  const run = async (): Promise<void> => {
+  /** Пауза, которую прерывают и пришедшая проба, и stop(). */
+  const pause = (ms: number): Promise<void> =>
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+
+  const writeProbes = async (): Promise<void> => {
     const deadline = performance.now() + PROBE_TIMEOUT_MS;
     for (let attempt = 0; pending.size > 0 && !stopped && performance.now() < deadline; attempt++) {
+      // Не удалось записать (нет папки, только чтение) — эту папку проверить нечем, пропускаем.
       await Promise.all(
         [...pending].map((path) => writeFile(path, String(attempt)).catch(() => pending.delete(path))),
       );
-      if (pending.size === 0) break;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, PROBE_INTERVAL_MS);
-        wake = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-      });
+      if (pending.size > 0 && !stopped) await pause(PROBE_INTERVAL_MS);
     }
-    await Promise.all([...probes].map((path) => rm(path, { force: true }).catch(() => undefined)));
+  };
+
+  const removeProbes = async (): Promise<void> => {
+    const results = await Promise.allSettled([...probes].map((path) => rm(path, { force: true })));
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        process.stderr.write(`desk watch: не удалось удалить пробный файл: ${String(result.reason)}\n`);
+      }
+    }
+  };
+
+  const run = async (): Promise<void> => {
+    await writeProbes();
+    watcher.off('all', onProbeEvent);
+    await removeProbes();
     // Цикл, а не один таймер: setTimeout в Node может сработать на ~1 мс раньше срока.
-    while (!stopped && performance.now() < quietAt()) {
-      await new Promise((resolve) => setTimeout(resolve, quietAt() - performance.now() + 1));
-    }
+    while (!stopped && performance.now() < quietAt()) await pause(quietAt() - performance.now() + 1);
   };
 
   return {
     run,
     stop: () => {
       stopped = true;
-      nudge();
+      wake();
+      stopListeners.splice(0).forEach((fn) => fn());
+    },
+    onStop: (fn) => {
+      stopListeners.push(fn);
     },
   };
 }

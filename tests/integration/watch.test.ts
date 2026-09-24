@@ -74,4 +74,17 @@ describe('watchDesk', () => {
     await writeFile(boardPath(root), `${await readFile(boardPath(root), 'utf8')}\n`);
     await vi.waitFor(() => expect(events).toContainEqual({ type: 'board_changed' }), { timeout: 3000 });
   });
+
+  it('close() до ready дожидается уборки пробных файлов', async () => {
+    const nextTick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+    const probeFiles = async (root: string): Promise<string[]> =>
+      [...(await readdir(deskDir(root))), ...(await readdir(tasksDir(root)))].filter((f) => f.startsWith('.watch-probe-'));
+    for (const ticks of [0, 1, 3, 10, 30, 100, 300]) {
+      const root = await makeProject();
+      const watcher = watchDesk(root, () => {});
+      for (let i = 0; i < ticks; i++) await nextTick();
+      await watcher.close();
+      expect({ ticks, left: await probeFiles(root) }).toEqual({ ticks, left: [] });
+    }
+  });
 });
