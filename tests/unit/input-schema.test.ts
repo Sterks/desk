@@ -44,6 +44,52 @@ describe('toolDefinitions', () => {
   });
 });
 
+describe('toolDefinitions: annotations', () => {
+  it.each([
+    ['get_board', { readOnlyHint: true, idempotentHint: true, openWorldHint: false }],
+    ['list_projects', { readOnlyHint: true, idempotentHint: true, openWorldHint: false }],
+    ['get_project', { readOnlyHint: true, idempotentHint: true, openWorldHint: false }],
+    ['list_tasks', { readOnlyHint: true, idempotentHint: true, openWorldHint: false }],
+    ['get_task', { readOnlyHint: true, idempotentHint: true, openWorldHint: false }],
+    ['create_task', { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }],
+    ['update_task', { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }],
+    ['move_task', { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }],
+    ['add_note', { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }],
+  ])('%s', (name, expected) => {
+    expect(tool(name).annotations).toEqual(expected);
+  });
+});
+
+describe('toolDefinitions: outputSchema', () => {
+  it('корень всегда type object (ограничение MCP SDK)', () => {
+    for (const t of toolDefinitions(board)) expect(t.outputSchema?.type).toBe('object');
+  });
+
+  it('get_board: колонки со счётчиком, поля, transitions', () => {
+    const schema = tool('get_board').outputSchema as { properties: Props; required: string[] };
+    expect(schema.required).toEqual(['name', 'guide', 'columns', 'fields', 'transitions']);
+    expect(schema.properties.columns).toMatchObject({ type: 'array', items: { required: ['id', 'title', 'guide', 'wip_limit', 'count'] } });
+  });
+
+  it('list_tasks: обёртка tasks/invalid_files/duplicate_ids/total', () => {
+    const schema = tool('list_tasks').outputSchema as { required: string[] };
+    expect(schema.required).toEqual(['tasks', 'invalid_files', 'duplicate_ids', 'total']);
+  });
+
+  it('create_task/update_task/move_task/add_note возвращают одну и ту же форму задачи', () => {
+    const shapes = ['create_task', 'update_task', 'move_task', 'add_note'].map((n) => tool(n).outputSchema);
+    for (const s of shapes) expect(s).toEqual(shapes[0]);
+    expect((shapes[0] as { required: string[] }).required).toContain('history');
+  });
+
+  it('get_task: id/invalid/errors обязательны, остальное — общее с задачей плюс unreadable', () => {
+    const schema = tool('get_task').outputSchema as { properties: Props; required: string[] };
+    expect(schema.required).toEqual(['id', 'invalid', 'errors']);
+    expect(schema.properties.unreadable).toEqual({ type: 'boolean' });
+    expect(schema.properties.history).toBeDefined();
+  });
+});
+
 describe('fieldJsonSchema', () => {
   it.each([
     ['summary', { type: 'string', maxLength: 200 }],

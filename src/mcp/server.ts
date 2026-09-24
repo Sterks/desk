@@ -46,7 +46,7 @@ export async function createDeskMcp(opts: DeskMcpOptions): Promise<DeskMcp> {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const data = await callTool({ holder, clock: opts.clock, workspace, workspaceError }, request.params.name, request.params.arguments);
-      return { content: [text(data)] };
+      return { content: [text(data)], structuredContent: data as Record<string, unknown> };
     } catch (e) {
       if (isDeskError(e)) return { isError: true, content: [text(e.toJSON())] };
       process.stderr.write(`desk mcp: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);

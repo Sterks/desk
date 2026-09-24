@@ -23,7 +23,7 @@ async function connect(cwd: string): Promise<{ client: Client; mcp: DeskMcp }> {
   return { client, mcp };
 }
 
-type ToolResult = { isError?: boolean; content: { type: string; text: string }[] };
+type ToolResult = { isError?: boolean; content: { type: string; text: string }[]; structuredContent?: Record<string, unknown> };
 const payload = (result: unknown): Record<string, unknown> => JSON.parse((result as ToolResult).content[0]?.text ?? 'null');
 
 describe('desk MCP server', () => {
@@ -39,6 +39,26 @@ describe('desk MCP server', () => {
     const result = await client.callTool({ name: 'create_task', arguments: { actor: 'planner', title: 'Через MCP' } });
     expect((result as ToolResult).isError).toBeFalsy();
     expect(payload(result)).toMatchObject({ id: 'T-001', title: 'Через MCP' });
+  });
+
+  it('успех — structuredContent совпадает с text content и tools/list несёт annotations/outputSchema', async () => {
+    const { client } = await connect(await makeProject());
+    const result = await client.callTool({ name: 'create_task', arguments: { actor: 'planner', title: 'Через MCP' } });
+    expect((result as ToolResult).structuredContent).toEqual(payload(result));
+    const { tools } = await client.listTools();
+    const createTask = tools.find((t) => t.name === 'create_task');
+    expect(createTask?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+    expect(createTask?.outputSchema?.type).toBe('object');
+    const getBoard = tools.find((t) => t.name === 'get_board');
+    expect(getBoard?.annotations).toMatchObject({ readOnlyHint: true });
+  });
+
+  it('ошибка — structuredContent не задан (isError-ответ без outputSchema-контракта)', async () => {
+    const { client } = await connect(await makeProject());
+    await client.callTool({ name: 'create_task', arguments: { actor: 'planner', title: 'X' } });
+    const result = await client.callTool({ name: 'move_task', arguments: { actor: 'dev', id: 'T-001', to: 'in_progress' } });
+    expect((result as ToolResult).isError).toBe(true);
+    expect((result as ToolResult).structuredContent).toBeUndefined();
   });
 
   it('ошибка — isError и JSON ошибки с guide', async () => {
