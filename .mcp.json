@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "desk": {
+      "command": "desk",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

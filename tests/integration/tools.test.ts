@@ -3,6 +3,7 @@ import { createBoardHolder } from '../../src/core/board-holder.js';
 import { callTool, type ToolContext } from '../../src/mcp/tools.js';
 import { catchErrorAsync } from '../helpers/errors.js';
 import { fixedClock, makeEmptyDir, makeProject } from '../helpers/project.js';
+import { createWorkspaceContext } from '../../src/core/workspace.js';
 
 let ctx: ToolContext;
 beforeEach(async () => {
@@ -18,6 +19,16 @@ describe('callTool', () => {
     const board = (await callTool(ctx, 'get_board', {})) as { guide: string; columns: { id: string; count: number }[] };
     expect(board.guide).toBe('Общие правила.');
     expect(board.columns[0]).toMatchObject({ id: 'backlog', count: 1 });
+  });
+
+  it('project tools возвращают legacy context и отклоняют чужой project', async () => {
+    const root = await makeProject();
+    const local: ToolContext = { holder: await createBoardHolder(root, {}), workspace: await createWorkspaceContext(root, 'agent') };
+    const projects = (await callTool(local, 'list_projects', {})) as { projects: { tenant_id: string; project_id: string }[] };
+    expect(projects.projects).toHaveLength(1);
+    const project = (await callTool(local, 'get_project', {})) as { tenant_id: string; project_id: string; legacy: boolean };
+    expect(project).toMatchObject({ tenant_id: 'local', legacy: true });
+    expect((await catchErrorAsync(() => callTool(local, 'list_tasks', { project_id: 'other' }))).code).toBe('BAD_REQUEST');
   });
 
   it('create_task → get_task', async () => {

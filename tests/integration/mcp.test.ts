@@ -27,7 +27,7 @@ type ToolResult = { isError?: boolean; content: { type: string; text: string }[]
 const payload = (result: unknown): Record<string, unknown> => JSON.parse((result as ToolResult).content[0]?.text ?? 'null');
 
 describe('desk MCP server', () => {
-  it('отдаёт instructions и 7 tools', async () => {
+  it('отдаёт instructions и 9 tools', async () => {
     const { client } = await connect(await makeProject());
     expect(client.getInstructions()).toBe(INSTRUCTIONS);
     const { tools } = await client.listTools();
@@ -78,7 +78,7 @@ describe('desk MCP server', () => {
 
   it('без .desk: tools есть, вызовы — INVALID_BOARD с подсказкой', async () => {
     const { client } = await connect(await makeEmptyDir());
-    expect((await client.listTools()).tools).toHaveLength(7);
+    expect((await client.listTools()).tools).toHaveLength(9);
     const result = await client.callTool({ name: 'get_board', arguments: {} });
     expect(payload(result)).toMatchObject({ code: 'INVALID_BOARD' });
     expect(String(payload(result).message)).toContain('desk init');

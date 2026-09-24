@@ -7,6 +7,7 @@ export const TASK_FILE_RE = /^([A-Za-z]+-\d+)\.md$/;
 
 export const deskDir = (root: string): string => join(root, DESK_DIR);
 export const boardPath = (root: string): string => join(root, DESK_DIR, 'board.yaml');
+export const projectPath = (root: string): string => join(root, DESK_DIR, 'project.yaml');
 export const tasksDir = (root: string): string => join(root, DESK_DIR, 'tasks');
 export const lockPath = (root: string): string => join(root, DESK_DIR, '.lock');
 export const taskPath = (root: string, id: string): string => join(tasksDir(root), `${id}.md`);

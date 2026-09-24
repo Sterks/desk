@@ -12,9 +12,9 @@ type Props = Record<string, Record<string, unknown>>;
 const props = (name: string): Props => tool(name).inputSchema.properties as Props;
 
 describe('toolDefinitions', () => {
-  it('7 tools', () => {
+  it('9 tools', () => {
     expect(toolDefinitions(board).map((t) => t.name)).toEqual([
-      'get_board', 'list_tasks', 'get_task', 'create_task', 'update_task', 'move_task', 'add_note',
+      'get_board', 'list_projects', 'get_project', 'list_tasks', 'get_task', 'create_task', 'update_task', 'move_task', 'add_note',
     ]);
   });
 
@@ -38,7 +38,7 @@ describe('toolDefinitions', () => {
 
   it('без доски — общие схемы без enum', () => {
     const defs = toolDefinitions(null);
-    expect(defs).toHaveLength(7);
+    expect(defs).toHaveLength(9);
     const create = defs.find((t) => t.name === 'create_task');
     expect((create?.inputSchema.properties as Props).column).toEqual({ type: 'string' });
   });

@@ -79,13 +79,25 @@ export function toolDefinitions(board: Board | null): Tool[] {
       name: 'get_board',
       description:
         'Схема доски: общие правила (guide), колонки с guide и WIP-лимитами, поля с типами и guide, разрешённые переходы, число задач в колонках. Вызывай первым.',
+      inputSchema: object({ tenant_id: { type: 'string' }, project_id: { type: 'string' } }),
+    },
+    {
+      name: 'list_projects',
+      description: 'Список доступных проектов в текущем tenant context. В legacy режиме содержит текущий локальный project.',
       inputSchema: object({}),
+    },
+    {
+      name: 'get_project',
+      description: 'Метаданные tenant/project и признак legacy режима.',
+      inputSchema: object({ tenant_id: { type: 'string' }, project_id: { type: 'string' } }),
     },
     {
       name: 'list_tasks',
       description:
         'Список задач, отсортированный по priority и дате создания. Фильтры объединяются через И. Перед созданием задачи ищи дубликаты через query.',
       inputSchema: object({
+        tenant_id: { type: 'string' },
+        project_id: { type: 'string' },
         column,
         assignee: { type: 'string' },
         query: { type: 'string', description: 'Подстрока в title или описании, без учёта регистра.' },
@@ -99,7 +111,7 @@ export function toolDefinitions(board: Board | null): Tool[] {
     {
       name: 'get_task',
       description: 'Вся задача: поля, описание, notes, history и ошибки валидности.',
-      inputSchema: object({ id }, ['id']),
+      inputSchema: object({ id, tenant_id: { type: 'string' }, project_id: { type: 'string' } }, ['id']),
     },
     {
       name: 'create_task',
@@ -108,6 +120,8 @@ export function toolDefinitions(board: Board | null): Tool[] {
       inputSchema: object(
         {
           actor,
+          tenant_id: { type: 'string' },
+          project_id: { type: 'string' },
           title: { type: 'string', maxLength: 200 },
           description: { type: 'string', description: 'Markdown.' },
           column,
@@ -120,19 +134,19 @@ export function toolDefinitions(board: Board | null): Tool[] {
       name: 'update_task',
       description: 'Изменить title, описание или поля. Колонку меняет только move_task.',
       inputSchema: object(
-        { actor, id, title: { type: 'string', maxLength: 200 }, description: { type: 'string' }, fields: fieldsSchema(board, true) },
+        { actor, id, tenant_id: { type: 'string' }, project_id: { type: 'string' }, title: { type: 'string', maxLength: 200 }, description: { type: 'string' }, fields: fieldsSchema(board, true) },
         ['actor', 'id'],
       ),
     },
     {
       name: 'move_task',
       description: 'Перенести задачу в колонку to. Поля, которые требует переход (requires), передай в fields этим же вызовом.',
-      inputSchema: object({ actor, id, to: column, fields: fieldsSchema(board, true) }, ['actor', 'id', 'to']),
+      inputSchema: object({ actor, id, tenant_id: { type: 'string' }, project_id: { type: 'string' }, to: column, fields: fieldsSchema(board, true) }, ['actor', 'id', 'to']),
     },
     {
       name: 'add_note',
       description: 'Добавить заметку в раздел Notes задачи: решение, находку, причину блокировки. Одна строка.',
-      inputSchema: object({ actor, id, text: { type: 'string', maxLength: 2000 } }, ['actor', 'id', 'text']),
+      inputSchema: object({ actor, id, tenant_id: { type: 'string' }, project_id: { type: 'string' }, text: { type: 'string', maxLength: 2000 } }, ['actor', 'id', 'text']),
     },
   ];
 }

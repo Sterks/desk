@@ -8,6 +8,7 @@ import { watchDesk } from '../core/watch.js';
 import { VERSION } from '../version.js';
 import { toolDefinitions } from './input-schema.js';
 import { callTool } from './tools.js';
+import { createWorkspaceContext } from '../core/workspace.js';
 
 export const INSTRUCTIONS =
   'Это канбан-доска проекта. Сначала вызови get_board и следуй guide доски, колонок и полей. ' +
@@ -31,6 +32,7 @@ const text = (value: unknown): { type: 'text'; text: string } => ({ type: 'text'
 
 export async function createDeskMcp(opts: DeskMcpOptions): Promise<DeskMcp> {
   const holder = await createBoardHolder(opts.cwd, opts.env ?? process.env);
+  const workspace = holder.root === null ? undefined : await createWorkspaceContext(holder.requireRoot(), 'mcp-agent');
   const server = new Server(
     { name: 'desk', version: VERSION },
     { capabilities: { tools: { listChanged: true } }, instructions: INSTRUCTIONS },
@@ -40,7 +42,7 @@ export async function createDeskMcp(opts: DeskMcpOptions): Promise<DeskMcp> {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
-      const data = await callTool({ holder, clock: opts.clock }, request.params.name, request.params.arguments);
+      const data = await callTool({ holder, clock: opts.clock, workspace }, request.params.name, request.params.arguments);
       return { content: [text(data)] };
     } catch (e) {
       if (isDeskError(e)) return { isError: true, content: [text(e.toJSON())] };
