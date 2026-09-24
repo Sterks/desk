@@ -7,7 +7,15 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/core/**', 'src/mcp/**', 'src/http/**'],
-      thresholds: { lines: 80, statements: 80, functions: 80, branches: 80 },
+      thresholds: {
+        lines: 80,
+        statements: 80,
+        functions: 80,
+        branches: 80,
+        'src/core/**': { lines: 80, statements: 80, functions: 80, branches: 80 },
+        'src/mcp/**': { lines: 80, statements: 80, functions: 80, branches: 80 },
+        'src/http/**': { lines: 80, statements: 80, functions: 80, branches: 80 },
+      },
     },
   },
 });
