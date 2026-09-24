@@ -21,6 +21,9 @@ test('перенос без assignee открывает окно requires и з�
   const dialog = page.getByRole('dialog', { name: 'T-001 → In progress' });
   await expect(dialog).toBeVisible();
   // Окно само фокусирует первое поле (после того, как dnd-kit снимет защиту выделения) — ждём фокус.
+  // Только недостающее поле перехода и его guide.
+  await expect(dialog.locator('.field-row')).toHaveCount(1);
+  await expect(dialog).toContainText('Имя агента или человека, который выполняет задачу.');
   await expect(dialog.getByLabel('assignee')).toBeFocused();
   await dialog.getByLabel('assignee').fill('e2e-agent');
   await dialog.getByRole('button', { name: 'Перенести' }).click();
@@ -162,4 +165,39 @@ test('фильтр по полю и открытая задача живут в 
   await expect(card(page, 'T-002')).toBeHidden();
   await page.keyboard.press('Escape');
   await expect(page).not.toHaveURL(/task=/);
+});
+
+test('во время перетаскивания запрещённые колонки тускнеют, разрешённые подсвечены', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Тащу', column: 'backlog' }]);
+  const box = await card(page, 'T-001').boundingBox();
+  if (!box) throw new Error('Нет boundingBox у карточки');
+  await page.mouse.move(box.x + box.width / 2, box.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + 30, { steps: 5 });
+  await expect(column(page, 'Backlog')).toHaveAttribute('data-drop', 'origin');
+  await expect(column(page, 'In progress')).toHaveAttribute('data-drop', 'allowed');
+  await expect(column(page, 'Review')).toHaveAttribute('data-drop', 'blocked');
+  await expect(column(page, 'Done')).toHaveAttribute('data-drop', 'blocked');
+  await expect(column(page, 'Done')).toHaveCSS('opacity', '0.38');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(column(page, 'Done')).toHaveAttribute('data-drop', 'idle');
+});
+
+test('счётчик WIP: на лимите — full, сверх лимита — over (красный)', async ({ page }) => {
+  const inProgress = (id: string) => ({ id, title: id, column: 'in_progress', assignee: 'a' });
+  await openBoard(page, [inProgress('T-001'), inProgress('T-002'), inProgress('T-003')]);
+  await expect(column(page, 'In progress')).toHaveAttribute('data-limit', 'full');
+  await writeTask(inProgress('T-004'));
+  await expect(column(page, 'In progress').locator('.column-count')).toHaveText('4/3');
+  await expect(column(page, 'In progress')).toHaveAttribute('data-limit', 'over');
+  const critical = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--color-critical)';
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+  await expect(column(page, 'In progress').locator('.column-count')).toHaveCSS('color', critical);
 });
