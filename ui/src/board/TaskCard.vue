@@ -18,9 +18,16 @@ const time = computed(() =>
 </script>
 
 <template>
+  <!-- Сам <article> — перетаскиваемый элемент SortableJS (прямой потомок списка VueDraggable,
+       обёртки нет): data-task-id читает Column.vue в onStart, ARIA-описание — как у обёртки
+       @dnd-kit в React-версии. role="group", а не button: внутри есть кнопка названия. -->
   <article
     class="card"
+    role="group"
+    aria-roledescription="перетаскиваемая задача"
+    :aria-label="`${task.id}: ${task.title}`"
     :data-testid="`card-${task.id}`"
+    :data-task-id="task.id"
     :data-invalid="task.invalid || undefined"
   >
     <header class="card-head">

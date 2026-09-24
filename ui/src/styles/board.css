@@ -125,12 +125,6 @@
   border-color: var(--invalid-border);
 }
 
-.card[data-lifted] {
-  box-shadow: var(--shadow-lift);
-  transform: rotate(-1.5deg) scale(1.02);
-  cursor: grabbing;
-}
-
 .card-head {
   display: flex;
   align-items: center;
@@ -215,11 +209,28 @@
   border-radius: 50%;
 }
 
-.draggable {
-  touch-action: none;
-  border-radius: var(--radius-card);
+/* Список карточек внутри .column-body — корень VueDraggable (SortableJS). Отдельный от .column-body,
+   потому что в списке должны быть только карточки (см. Column.vue); flex: 1 растягивает его на
+   свободную высоту колонки, чтобы плейсхолдер можно было завести и в пустую колонку. */
+.column-list {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: var(--space-4);
 }
 
-.draggable[data-dragging] {
+.card {
+  cursor: grab;
+}
+
+/* Плейсхолдер SortableJS: место, куда встанет карточка (класс ghost-class в Column.vue). Сама
+   «летящая» карточка — нативный drag image браузера, её не стилизовать. */
+.card.card-ghost {
   opacity: 0.35;
+  transform: none;
+}
+
+.card.card-chosen {
+  cursor: grabbing;
 }

@@ -56,10 +56,8 @@ async function performMove(id: string, to: string, fields: FieldChanges): Promis
   await refresh();
 }
 
-// Board.vue (Task 4) is still static and only emits `open` today — Task 8 adds drag-and-drop and
-// the matching `move` emit to Board. `handleMove` already has the exact signature TaskPanel's
-// column <select> needs (`(task: TaskItem, to: string)`); Task 8 wires the same handler to
-// `<Board @move="handleMove">` once that emit exists, unchanged.
+// Один обработчик для drag-and-drop на доске и для выбора колонки в панели задачи. Board.vue
+// эмитит move только для разрешённых переходов; карточка визуально переезжает после refresh().
 function handleMove(task: TaskItem, to: string): void {
   if (!board.value) return;
   const missing = missingForMove(board.value, task, to);
@@ -87,7 +85,7 @@ const visible = computed(() => (list.value ? applyFilters(list.value.tasks, filt
     </header>
     <Banners :board="board" :list="list" :error="error" @open="openTask" />
     <main class="app-main">
-      <Board :board="board" :tasks="visible" @open="openTask" />
+      <Board :board="board" :tasks="visible" @open="openTask" @move="handleMove" />
     </main>
     <ErrorBoundary v-if="filters.task" :key="filters.task">
       <TaskPanel :board="board" :task-id="filters.task" :version="version" @close="closeTask" @error="pushToast" @move="handleMove" />
