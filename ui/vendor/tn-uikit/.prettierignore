@@ -1,0 +1,9 @@
+dist
+node_modules
+.histoire
+.idea
+package-lock.json
+*.d.ts
+components/icons/default-icons.ts
+components/icons/custom-icons.ts
+Changelog.md

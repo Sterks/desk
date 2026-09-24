@@ -1,0 +1,13 @@
+/**/*.story.md
+/**/*.story.vue
+/.histoire
+/consts
+.nginx
+.gitlab
+.githooks
+.dockerignore
+Dockerfile
+histoire.config.ts
+histoire.setup.ts
+logs.txt
+collect-icon-names.js

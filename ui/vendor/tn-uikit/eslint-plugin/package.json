@@ -1,0 +1,12 @@
+{
+  "name": "@life_uikit/eslint-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ESLint-плагин кита.",
+  "type": "commonjs",
+  "main": "index.js",
+  "peerDependencies": {
+    "eslint": ">=8",
+    "vue-eslint-parser": ">=9"
+  }
+}

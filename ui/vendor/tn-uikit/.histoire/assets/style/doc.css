@@ -1,0 +1,51 @@
+.histoire-story-docs {
+  --header-bg: var(--background-tertiary-enabled);
+  --header-color: var(--content-primary-a-enabled);
+  --link-color: var(--content-accent-enabled);
+  --table-bg: var(--background-tertiary-enabled);
+  --table-text: var(--content-primary-a-enabled);
+  --code-bg: var(--neutral-30);
+  --code-text: var(--content-primary-a-enabled);
+}
+
+html.htw-dark .histoire-story-docs {
+  --header-bg: var(--background-secondary-b-enabled);
+  --header-color: var(--content-primary-b-enabled);
+  --link-color: var(--content-accent-enabled);
+  --table-bg: var(--background-secondary-b-enabled);
+  --table-text: var(--content-primary-b-enabled);
+  --code-bg: var(--background-secondary-b-enabled);
+  --code-text: var(--content-primary-b-enabled);
+}
+
+.histoire-story-docs {
+  h2, h3, h4, h5, h6 {
+    background: var(--header-bg);
+    color: var(--header-color);
+  }
+
+  a {
+    color: var(--link-color);
+  }
+
+  p code, ul code, ol code {
+    padding: 2px 4px;
+    background-color: var(--code-bg);
+    color: var(--code-text);
+  }
+
+  td, th {
+    background: var(--table-bg);
+    color: var(--table-text);
+  }
+
+  td code, th code {
+    padding: 2px 4px;
+    background-color: var(--code-bg);
+    color: var(--code-text);
+  }
+}
+
+.htw-prose :where(code):not(:where([class~="htw-not-prose"],[class~="htw-not-prose"] *)) {
+  background-color: unset;
+}

@@ -1,0 +1,34 @@
+{
+  // Visit https://aka.ms/tsconfig to read more about this file
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "baseUrl": ".",
+    "types": [
+      "vite/client",
+      "histoire"
+    ]
+  },
+  "include": [
+    ".",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.vue",
+    "extend-types.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.story.vue"
+  ]
+}
