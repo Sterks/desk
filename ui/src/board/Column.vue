@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { VueDraggable, type SortableEvent } from 'vue-draggable-plus';
 import type { BoardInfo, ColumnInfo, TaskItem } from '../api/types';
+import type { DragEndEventLike } from '../lib/drag';
 import { allowedTargets } from '../lib/transitions';
 import TaskCard from './TaskCard.vue';
 
@@ -18,7 +19,12 @@ const props = defineProps<{
 }>();
 /** dragStart несёт колонку-источник всегда (даже если задачу по id не нашли): Board.vue по ней
  *  замораживает зеркала на время жеста и обязан получить парный dragEnd, чтобы их сбросить. */
-const emit = defineEmits<{ open: [id: string]; dragStart: [from: string, taskId: string | undefined]; dragEnd: [] }>();
+const emit = defineEmits<{
+  open: [id: string];
+  dragStart: [from: string, taskId: string | undefined];
+  /** originalEvent жеста: по нему Board.vue отличает бросок от отмены (Escape, вне окна, touchcancel). */
+  dragEnd: [originalEvent: DragEndEventLike | undefined];
+}>();
 
 /*
  * Зеркало props.tasks, к которому привязан v-model VueDraggable. SortableJS оптимистичен: при
@@ -74,6 +80,23 @@ function onMove(evt: { to: HTMLElement }): boolean {
 function onStart(evt: SortableEvent): void {
   emit('dragStart', props.column.id, evt.item.dataset.taskId);
 }
+
+function onEnd(evt: SortableEvent): void {
+  // originalEvent SortableJS кладёт в каждое событие (_dispatchEvent), но @types/sortablejs его не описывает.
+  emit('dragEnd', (evt as SortableEvent & { originalEvent?: DragEndEventLike }).originalEvent);
+}
+
+/*
+ * Нативный DnD даёт событие `drop` только над элементом, отменившим dragover. SortableJS отменяет его
+ * лишь над своим списком, поэтому без этого бросок на заголовок или подсказку разрешённой колонки
+ * заканчивался бы голым dragend с dropEffect 'none' — а это Board.vue считает отменой. Запрещённая
+ * колонка dragover не отменяет: курсор «нельзя», бросок туда — отмена.
+ */
+function onDragOver(e: DragEvent): void {
+  if (dropState.value === 'idle' || dropState.value === 'blocked') return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+}
 </script>
 
 <template>
@@ -83,6 +106,7 @@ function onStart(evt: SortableEvent): void {
     :data-column-id="column.id"
     :data-drop="dropState"
     :data-limit="limitState"
+    @dragover="onDragOver"
   >
     <header class="column-head">
       <h2 class="column-title">{{ column.title }}</h2>
@@ -104,7 +128,7 @@ function onStart(evt: SortableEvent): void {
         :animation="150"
         :on-move="onMove"
         @start="onStart"
-        @end="emit('dragEnd')"
+        @end="onEnd"
       >
         <TaskCard v-for="task in mirror" :key="task.id" :task="task" :board="board" @open="emit('open', $event)" />
       </VueDraggable>

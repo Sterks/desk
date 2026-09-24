@@ -13,6 +13,7 @@ import {
   type PanelState,
 } from '../lib/fields';
 import { formatTime } from '../lib/format';
+import { allowedTargets } from '../lib/transitions';
 import { dialogsOpen } from '../composables/useDialogStack';
 import Markdown from '../ui/Markdown.vue';
 import FieldInput from './FieldInput.vue';
@@ -105,6 +106,14 @@ function moveTo(to: string): void {
 }
 
 const column = computed(() => (state.value ? props.board.columns.find((c) => c.id === state.value?.task.column) : undefined));
+// Те же допустимые переходы, что и у drag-and-drop на доске (Board/Column.vue): текущая колонка плюс
+// allowedTargets. Запрещённый переход здесь не предлагается — как и на доске, где его не бросить.
+const moveOptions = computed(() => {
+  const from = state.value?.task.column;
+  if (from === undefined) return [];
+  const allowed = new Set(allowedTargets(props.board, from));
+  return props.board.columns.filter((c) => c.id === from || allowed.has(c.id));
+});
 const dirty = computed(() => (state.value ? isDirty(state.value.task, state.value.draft) : false));
 const stale = computed(() => (state.value ? undeclaredFields(props.board, state.value.task.fields) : []));
 </script>
@@ -124,7 +133,7 @@ const stale = computed(() => (state.value ? undeclaredFields(props.board, state.
         @change="moveTo(($event.target as HTMLSelectElement).value)"
       >
         <option v-if="!column" :value="state.task.column">{{ state.task.column }} (нет в board.yaml)</option>
-        <option v-for="c in board.columns" :key="c.id" :value="c.id">{{ c.title }}</option>
+        <option v-for="c in moveOptions" :key="c.id" :value="c.id">{{ c.title }}</option>
       </select>
       <button type="button" class="button" aria-label="Закрыть панель" @click="emit('close')">Esc</button>
     </header>

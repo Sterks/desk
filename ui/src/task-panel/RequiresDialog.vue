@@ -28,6 +28,11 @@ const saving = ref(false);
 const { register } = useDialogStack();
 let unregister: (() => void) | undefined;
 const formEl = ref<HTMLFormElement | null>(null);
+/** Первое реально доступное поле: kit-компоненты могут держать скрытые/отключённые input внутри. */
+function firstField(): HTMLElement | undefined {
+  const candidates = formEl.value?.querySelectorAll<HTMLInputElement>('input, select, textarea') ?? [];
+  return Array.from(candidates).find((el) => el.type !== 'hidden' && !el.disabled && el.getClientRects().length > 0);
+}
 onMounted(() => {
   unregister = register();
   /*
@@ -39,7 +44,7 @@ onMounted(() => {
    * снимает выделение только в начале жеста (_triggerDragStart), после броска — нет; проверено в
    * Chromium/Firefox/WebKit: ввод сразу после броска доходит до поля целиком (task-8-report.md).
    */
-  void nextTick(() => formEl.value?.querySelector<HTMLElement>('input, select, textarea')?.focus());
+  void nextTick(() => firstField()?.focus());
 });
 onUnmounted(() => unregister?.());
 

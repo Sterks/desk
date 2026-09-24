@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { BoardInfo, TaskItem } from '../api/types';
+import { columnAtPoint, resolveDragEnd, type DragEndEventLike, type Lane } from '../lib/drag';
 import { allowedTargets, groupByColumn } from '../lib/transitions';
 import Column from './Column.vue';
 
@@ -9,7 +10,9 @@ const emit = defineEmits<{ open: [id: string]; move: [task: TaskItem, to: string
 
 interface Drag {
   from: string;
-  task: TaskItem | null;
+  /** Только id: задачу перечитываем из props.tasks в момент броска — SSE мог обновить её поля
+   *  посреди жеста, и missingForMove в App.vue должен видеть свежую версию. */
+  taskId: string | undefined;
 }
 
 const byColumn = computed(() => groupByColumn(props.board, props.tasks));
@@ -17,32 +20,39 @@ const boardEl = ref<HTMLElement | null>(null);
 const drag = ref<Drag | null>(null);
 const overColumn = ref<string | null>(null);
 
-/*
- * Цель переноса — колонка под указателем в момент отпускания, а не список, где SortableJS оставил
- * плейсхолдер. Иначе перенос Backlog → Done (запрещён) через соседнюю разрешённую In progress
- * отпускался бы «в In progress»: onMove не пускает плейсхолдер в Done, и он остаётся в последнем
- * разрешённом списке. Так же решала React-версия (pointerWithin в @dnd-kit). Колонка — вертикальная
- * полоса: отпускание ниже короткой колонки, но в её полосе, тоже считается броском в неё.
- */
-function columnAt(x: number, y: number): string | null {
+function lanes(): Lane[] {
   const sections = boardEl.value?.querySelectorAll<HTMLElement>('[data-column-id]') ?? [];
-  for (const section of sections) {
+  return Array.from(sections, (section) => {
     const rect = section.getBoundingClientRect();
-    if (x >= rect.left && x <= rect.right && y >= rect.top) return section.dataset.columnId ?? null;
-  }
-  return null;
+    return { id: section.dataset.columnId ?? '', left: rect.left, right: rect.right, top: rect.top };
+  });
 }
 
-// Во время нативного HTML5-перетаскивания mouse/pointermove не приходят — только dragover; в режиме
-// fallback SortableJS (тач) наоборот. Слушаем все, в фазе capture, чтобы SortableJS их не погасил.
+/*
+ * Цель переноса — колонка под указателем в момент отпускания (lib/drag.ts), а не список, где
+ * SortableJS оставил плейсхолдер. Иначе перенос Backlog → Done (запрещён) через соседнюю
+ * разрешённую In progress отпускался бы «в In progress»: onMove не пускает плейсхолдер в Done, и он
+ * остаётся в последнем разрешённом списке. overColumn нужен для подсветки 'over' и как запасной
+ * вариант, если у события броска нет координат.
+ *
+ * Во время нативного HTML5-перетаскивания mouse/pointermove не приходят — только dragover; в режиме
+ * fallback SortableJS (тач) наоборот. Слушаем все, в фазе capture, чтобы SortableJS их не погасил.
+ */
 const POINTER_EVENTS = ['dragover', 'pointermove', 'mousemove', 'touchmove'] as const;
+
+function setOver(column: string | null): void {
+  if (column !== overColumn.value) overColumn.value = column;
+}
 
 function track(e: Event): void {
   // Не `instanceof TouchEvent`: в десктопных Firefox/Safari такого конструктора нет вовсе.
   const point = 'touches' in e ? (e as TouchEvent).touches[0] : (e as MouseEvent);
-  if (!point) return;
-  const column = columnAt(point.clientX, point.clientY);
-  if (column !== overColumn.value) overColumn.value = column;
+  if (point) setOver(columnAtPoint(lanes(), point.clientX, point.clientY));
+}
+
+/** Указатель ушёл за пределы окна: подсветку снимаем (relatedTarget === null только в этом случае). */
+function trackLeave(e: Event): void {
+  if ((e as DragEvent).relatedTarget === null) setOver(null);
 }
 
 function listen(on: boolean): void {
@@ -50,25 +60,48 @@ function listen(on: boolean): void {
     if (on) document.addEventListener(type, track, { capture: true, passive: true });
     else document.removeEventListener(type, track, { capture: true });
   }
+  if (on) document.addEventListener('dragleave', trackLeave, { capture: true, passive: true });
+  else document.removeEventListener('dragleave', trackLeave, { capture: true });
 }
 
 function startDrag(from: string, taskId: string | undefined): void {
-  drag.value = { from, task: props.tasks.find((t) => t.id === taskId) ?? null };
+  drag.value = { from, taskId };
   overColumn.value = from;
   listen(true);
 }
 
-function endDrag(): void {
-  const current = drag.value;
-  const target = overColumn.value;
+/** Снимает состояние жеста. Сброс drag → null размораживает зеркала колонок (см. Column.vue). */
+function resetDrag(): void {
   listen(false);
-  // Сброс drag → null размораживает зеркала колонок: они возвращаются к props.tasks (см. Column.vue).
   drag.value = null;
   overColumn.value = null;
-  if (!current?.task || !target || target === current.from) return;
-  if (!allowedTargets(props.board, current.from).includes(target)) return;
-  emit('move', current.task, target);
 }
+
+function targetOf(originalEvent: DragEndEventLike | undefined): string | null {
+  const end = resolveDragEnd(originalEvent);
+  if (end.kind === 'cancel') return null;
+  return end.kind === 'point' ? columnAtPoint(lanes(), end.x, end.y) : overColumn.value;
+}
+
+function endDrag(originalEvent: DragEndEventLike | undefined): void {
+  const current = drag.value;
+  const target = targetOf(originalEvent);
+  resetDrag();
+  if (!current || !target || target === current.from) return;
+  if (!allowedTargets(props.board, current.from).includes(target)) return;
+  const task = props.tasks.find((t) => t.id === current.taskId);
+  if (task && task.column === current.from) emit('move', task, target);
+}
+
+// SSE убрал колонку-источник посреди жеста: её Sortable уничтожается (destroy() → _onDrop() без
+// события), `end` не придёт никогда — без этого зеркала всех колонок остались бы замороженными.
+watch(
+  () => props.board.columns,
+  (columns) => {
+    const from = drag.value?.from;
+    if (from !== undefined && !columns.some((c) => c.id === from)) resetDrag();
+  },
+);
 
 onBeforeUnmount(() => listen(false));
 </script>
