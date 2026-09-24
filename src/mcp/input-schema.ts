@@ -174,12 +174,19 @@ const getProjectOutputSchema = object(
 
 /** Только чтение, безопасно вызывать без подтверждения; каждый вызов — тот же результат при неизменной доске. */
 const READ_ONLY: ToolAnnotations = { readOnlyHint: true, idempotentHint: true, openWorldHint: false };
+// idempotentHint: false — create_task всегда выделяет новый id (createTask/nextId в task-store.ts),
+// add_note всегда добавляет запись в notes (notes: [...task.notes, {...}]) — повтор с теми же
+// аргументами создаёт вторую задачу/заметку, а не совпадает с первым вызовом.
 /** Мутирует, но только добавляет (новую задачу, новую заметку) — не стирает существующие данные. */
 const ADDITIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+// idempotentHint: false — консервативное значение по умолчанию, не гарантия отсутствия эффекта
+// от повтора. update_task безусловно проставляет updatedAt на каждый вызов (task-store.ts:
+// updateTask), так что повтор с одинаковыми аргументами меняет файл задачи каждый раз.
+// move_task может быть no-op при повторе (mutate() пропускает запись, если планировщик перехода
+// вернул тот же объект задачи), но это не гарантировано для любых входных fields — поэтому
+// оставлен тот же консервативный false, а не true.
 /** Мутирует и может перезаписать/обнулить существующие данные (поля, колонку). */
 const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
-// idempotentHint: false для всех мутирующих tools — каждый вызов дописывает запись
-// в history/notes, так что повтор с теми же аргументами не эквивалентен одному вызову.
 
 export function toolDefinitions(board: Board | null): Tool[] {
   const column: JsonSchema = board ? { type: 'string', enum: board.columns.map((c) => c.id) } : { type: 'string' };

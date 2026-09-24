@@ -30,6 +30,12 @@ export interface DeskMcpOptions {
 
 const text = (value: unknown): { type: 'text'; text: string } => ({ type: 'text', text: JSON.stringify(value, null, 2) });
 
+// Каждый outputSchema объявлен с корнем type:"object" — structuredContent обязан ему
+// соответствовать. Все текущие callTool-ветки и правда возвращают объект (см. tools.ts),
+// но её тип — Promise<unknown>, так что защита рантайм-проверкой дешевле, чем полагаться
+// на то, что будущая ветка не вернёт массив/примитив.
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
 export async function createDeskMcp(opts: DeskMcpOptions): Promise<DeskMcp> {
   const holder = await createBoardHolder(opts.cwd, opts.env ?? process.env);
   // project.yaml меняется гораздо реже board.yaml, поэтому читаем его один раз при старте
@@ -46,7 +52,7 @@ export async function createDeskMcp(opts: DeskMcpOptions): Promise<DeskMcp> {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       const data = await callTool({ holder, clock: opts.clock, workspace, workspaceError }, request.params.name, request.params.arguments);
-      return { content: [text(data)], structuredContent: data as Record<string, unknown> };
+      return { content: [text(data)], ...(isPlainObject(data) ? { structuredContent: data } : {}) };
     } catch (e) {
       if (isDeskError(e)) return { isError: true, content: [text(e.toJSON())] };
       process.stderr.write(`desk mcp: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n`);
