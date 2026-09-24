@@ -86,17 +86,6 @@ function onEnd(evt: SortableEvent): void {
   emit('dragEnd', (evt as SortableEvent & { originalEvent?: DragEndEventLike }).originalEvent);
 }
 
-/*
- * Нативный DnD даёт событие `drop` только над элементом, отменившим dragover. SortableJS отменяет его
- * лишь над своим списком, поэтому без этого бросок на заголовок или подсказку разрешённой колонки
- * заканчивался бы голым dragend с dropEffect 'none' — а это Board.vue считает отменой. Запрещённая
- * колонка dragover не отменяет: курсор «нельзя», бросок туда — отмена.
- */
-function onDragOver(e: DragEvent): void {
-  if (dropState.value === 'idle' || dropState.value === 'blocked') return;
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-}
 </script>
 
 <template>
@@ -106,7 +95,6 @@ function onDragOver(e: DragEvent): void {
     :data-column-id="column.id"
     :data-drop="dropState"
     :data-limit="limitState"
-    @dragover="onDragOver"
   >
     <header class="column-head">
       <h2 class="column-title">{{ column.title }}</h2>

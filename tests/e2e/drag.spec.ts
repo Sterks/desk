@@ -10,12 +10,27 @@ import { card, column, dragTo, openBoard, readTask, toasts, writeTask } from './
 
 test.describe.configure({ mode: 'serial' });
 
-function watchMoves(page: Page): string[] {
-  const moves: string[] = [];
-  page.on('request', (r) => {
-    if (r.method() === 'POST' && r.url().endsWith('/move')) moves.push(r.postData() ?? '');
+/*
+ * Счётчик POST …/move в самой странице, без таймеров: fetch вызывается синхронно из обработчика броска
+ * (Board.endDrag → App.handleMove → api.move), раньше, чем Vue перерисует data-drop в 'idle'. Поэтому
+ * «дождаться idle, потом прочитать счётчик» — детерминированная проверка «запроса не было».
+ * Ставится до openBoard (addInitScript действует со следующей навигации).
+ */
+async function trackMoves(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as typeof window & { __moves?: number };
+    const original = w.fetch.bind(w);
+    w.__moves = 0;
+    w.fetch = (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/move')) w.__moves = (w.__moves ?? 0) + 1;
+      return original(input, init);
+    };
   });
-  return moves;
+}
+
+async function movesAfterDrag(page: Page): Promise<number> {
+  await expect(page.locator('.board [data-drop]:not([data-drop="idle"])')).toHaveCount(0);
+  return page.evaluate(() => (window as typeof window & { __moves?: number }).__moves ?? -1);
 }
 
 /** Начать перетаскивание карточки и довести указатель до точки, не отпуская. */
@@ -37,13 +52,13 @@ async function hover(page: Page, target: Locator, dy = 80): Promise<void> {
 const nodes = (page: Page, id: string): Locator => page.locator(`.board [data-task-id="${id}"]`);
 
 test('разрешённый перенос без недостающих полей: карточка переезжает после записи', async ({ page }) => {
+  await trackMoves(page);
   await openBoard(page, [{ id: 'T-004', title: 'D', column: 'backlog', assignee: 'd' }]);
-  const moves = watchMoves(page);
   await dragTo(page, card(page, 'T-004'), column(page, 'In progress'));
   await expect(column(page, 'In progress').getByTestId('card-T-004')).toBeVisible();
   await expect.poll(() => readTask('T-004')).toContain('column: in_progress');
   await expect(nodes(page, 'T-004')).toHaveCount(1);
-  expect(moves).toHaveLength(1);
+  expect(await movesAfterDrag(page)).toBe(1);
 });
 
 test('бросок на заголовок разрешённой колонки тоже переносит', async ({ page }) => {
@@ -72,8 +87,8 @@ test('окно requires: пока открыто, карточка в исход
 });
 
 test('отмена окна requires: карточка на месте, запроса и записи нет, повторный перенос работает', async ({ page }) => {
+  await trackMoves(page);
   await openBoard(page, [{ id: 'T-001', title: 'Нужен исполнитель', column: 'backlog' }]);
-  const moves = watchMoves(page);
   await dragTo(page, card(page, 'T-001'), column(page, 'In progress'));
   const field = page.getByRole('dialog', { name: 'T-001 → In progress' }).getByLabel('assignee');
   await expect(field).toBeVisible();
@@ -82,7 +97,7 @@ test('отмена окна requires: карточка на месте, запр
   await expect(column(page, 'Backlog').getByTestId('card-T-001')).toBeVisible();
   await expect(column(page, 'In progress').getByTestId('card-T-001')).toHaveCount(0);
   await expect(nodes(page, 'T-001')).toHaveCount(1);
-  expect(moves).toHaveLength(0);
+  expect(await movesAfterDrag(page)).toBe(0);
   expect(await readTask('T-001')).toContain('column: backlog');
 
   await dragTo(page, card(page, 'T-001'), column(page, 'In progress'));
@@ -92,11 +107,11 @@ test('отмена окна requires: карточка на месте, запр
 });
 
 test('запрещённый переход через разрешённую колонку: плейсхолдер не входит в Done, переноса нет', async ({ page }) => {
+  await trackMoves(page);
   await openBoard(page, [
     { id: 'T-001', title: 'X', column: 'backlog', assignee: 'a' },
     { id: 'T-002', title: 'Y', column: 'in_progress', assignee: 'b' },
   ]);
-  const moves = watchMoves(page);
   await grab(page, card(page, 'T-001'));
   // Над карточкой в In progress плейсхолдер SortableJS входит в разрешённый список…
   const other = await card(page, 'T-002').boundingBox();
@@ -113,23 +128,21 @@ test('запрещённый переход через разрешённую к
   await expect(column(page, 'Backlog').getByTestId('card-T-001')).toBeVisible();
   await expect(nodes(page, 'T-001')).toHaveCount(1);
   await expect(page.locator('.board [data-task-id]')).toHaveCount(2);
-  await page.waitForTimeout(300);
-  expect(moves).toHaveLength(0);
+  expect(await movesAfterDrag(page)).toBe(0);
   await expect(toasts(page).locator('.toast')).toHaveCount(0);
 });
 
 test('Escape над разрешённой колонкой отменяет перенос', async ({ page }) => {
+  await trackMoves(page);
   await openBoard(page, [{ id: 'T-004', title: 'D', column: 'backlog', assignee: 'd' }]);
-  const moves = watchMoves(page);
   await grab(page, card(page, 'T-004'));
   await hover(page, column(page, 'In progress'));
   await expect(column(page, 'In progress')).toHaveAttribute('data-drop', 'over');
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await expect(column(page, 'In progress')).toHaveAttribute('data-drop', 'idle');
-  await page.waitForTimeout(300);
   await expect(column(page, 'Backlog').getByTestId('card-T-004')).toBeVisible();
-  expect(moves).toHaveLength(0);
+  expect(await movesAfterDrag(page)).toBe(0);
   expect(await readTask('T-004')).toContain('column: backlog');
 });
 
@@ -147,14 +160,13 @@ test('отказ сервера (WIP-лимит): toast, карточка в и�
 });
 
 test('отпускание вне колонок ничего не переносит', async ({ page }) => {
+  await trackMoves(page);
   await openBoard(page, [{ id: 'T-001', title: 'X', column: 'backlog', assignee: 'a' }]);
-  const moves = watchMoves(page);
   await grab(page, card(page, 'T-001'));
   await page.mouse.move(640, 5, { steps: 10 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
   await expect(column(page, 'Backlog').getByTestId('card-T-001')).toBeVisible();
-  expect(moves).toHaveLength(0);
+  expect(await movesAfterDrag(page)).toBe(0);
 });
 
 test('запись агента посреди жеста не ломает DOM: обновления применяются после броска', async ({ page }) => {
@@ -182,4 +194,22 @@ test('панель: «Колонка» предлагает те же перех
   await card(page, 'T-001').getByRole('button', { name: 'Из бэклога' }).click();
   const select = page.getByRole('dialog', { name: 'T-001' }).getByLabel('Колонка');
   await expect(select.locator('option')).toHaveText(['Backlog', 'In progress']);
+});
+
+test('бросок ниже короткой разрешённой колонки (пустое поле доски в её полосе) переносит', async ({ page }) => {
+  await trackMoves(page);
+  await openBoard(page, [{ id: 'T-004', title: 'D', column: 'backlog', assignee: 'd' }]);
+  const target = await column(page, 'In progress').boundingBox();
+  const boardBox = await page.locator('.board').boundingBox();
+  if (!target || !boardBox) throw new Error('Нет boundingBox');
+  const y = target.y + target.height + 60;
+  // Точка действительно вне секции колонки, но ещё на доске.
+  expect(y).toBeLessThan(boardBox.y + boardBox.height);
+  await grab(page, card(page, 'T-004'));
+  await page.mouse.move(target.x + target.width / 2, y, { steps: 20 });
+  await expect(column(page, 'In progress')).toHaveAttribute('data-drop', 'over');
+  await page.mouse.up();
+  await expect(column(page, 'In progress').getByTestId('card-T-004')).toBeVisible();
+  expect(await movesAfterDrag(page)).toBe(1);
+  await expect.poll(() => readTask('T-004')).toContain('column: in_progress');
 });

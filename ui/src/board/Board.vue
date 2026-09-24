@@ -93,6 +93,23 @@ function endDrag(originalEvent: DragEndEventLike | undefined): void {
   if (task && task.column === current.from) emit('move', task, target);
 }
 
+/*
+ * Нативный DnD даёт событие `drop` только над элементом, отменившим dragover; иначе жест кончается
+ * голым dragend, а это отмена (lib/drag.ts). SortableJS отменяет dragover только над своими
+ * списками — ни заголовок колонки, ни пустое поле доски под короткой колонкой (align-items:
+ * flex-start) бросок не приняли бы, хотя полоса колонки там подсвечена как цель. Поэтому решаем на
+ * уровне всей доски тем же правилом, что и подсветка: точка в полосе колонки-источника или
+ * разрешённой колонки — бросок принимаем; запрещённая колонка или промежуток — нет (курсор «нельзя»).
+ */
+function onDragOver(e: DragEvent): void {
+  const from = drag.value?.from;
+  if (from === undefined) return;
+  const column = columnAtPoint(lanes(), e.clientX, e.clientY);
+  if (column === null || (column !== from && !allowedTargets(props.board, from).includes(column))) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+}
+
 // SSE убрал колонку-источник посреди жеста: её Sortable уничтожается (destroy() → _onDrop() без
 // события), `end` не придёт никогда — без этого зеркала всех колонок остались бы замороженными.
 watch(
@@ -107,7 +124,7 @@ onBeforeUnmount(() => listen(false));
 </script>
 
 <template>
-  <div ref="boardEl" class="board">
+  <div ref="boardEl" class="board" @dragover="onDragOver">
     <Column
       v-for="column in board.columns"
       :key="column.id"
