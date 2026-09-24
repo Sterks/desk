@@ -1,8 +1,8 @@
-import {mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,readFile,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {startHttpServer,type RunningHttpServer} from '../../src/http/server.js';
-import {taskPath} from '../../src/core/paths.js';
+import {boardPath,lockPath,taskPath} from '../../src/core/paths.js';
 import {createWorkspaceContext} from '../../src/core/workspace.js';
 import {makeEmptyDir,makeProject,fixedClock} from '../helpers/project.js';
 import {openSse,rawRequest} from '../helpers/http.js';
@@ -21,3 +21,74 @@ describe('HTTP API',()=>{
 });
 
 describe('static fallback',()=>{it('отдаёт index и CSP',async()=>{const response=await api({path:'/deep/link'});expect(response.status).toBe(200);expect(response.headers['content-security-policy']).toContain("default-src 'self'");});});
+
+describe('HTTP status codes через реальный API', () => {
+  it('400 на невалидное значение поля', async () => {
+    const res = await api({ method: 'POST', path: '/api/tasks', body: { title: 'Bad field', fields: { priority: 'not-a-priority' } } });
+    expect(res.status).toBe(400);
+    expect(res.json()).toMatchObject({ ok: false, error: { code: 'INVALID_VALUE' } });
+  });
+
+  it('404 на неизвестный id задачи', async () => {
+    const res = await api({ path: '/api/tasks/T-999' });
+    expect(res.status).toBe(404);
+    expect(res.json()).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+  });
+
+  it('409 TRANSITION_FORBIDDEN на запрещённый переход', async () => {
+    await api({ method: 'POST', path: '/api/tasks', body: { title: 'Skip step' } });
+    const res = await api({ method: 'POST', path: '/api/tasks/T-001/move', body: { to: 'review' } });
+    expect(res.status).toBe(409);
+    expect(res.json()).toMatchObject({ ok: false, error: { code: 'TRANSITION_FORBIDDEN' } });
+  });
+
+  it('409 WIP_LIMIT, когда колонка заполнена', async () => {
+    await api({ method: 'POST', path: '/api/tasks', body: { title: 'A' } });
+    await api({ method: 'POST', path: '/api/tasks', body: { title: 'B' } });
+    await api({ method: 'POST', path: '/api/tasks', body: { title: 'C' } });
+    await api({ method: 'POST', path: '/api/tasks/T-001/move', body: { to: 'in_progress', fields: { assignee: 'a' } } });
+    await api({ method: 'POST', path: '/api/tasks/T-002/move', body: { to: 'in_progress', fields: { assignee: 'b' } } });
+    const res = await api({ method: 'POST', path: '/api/tasks/T-003/move', body: { to: 'in_progress', fields: { assignee: 'c' } } });
+    expect(res.status).toBe(409);
+    expect(res.json()).toMatchObject({ ok: false, error: { code: 'WIP_LIMIT' } });
+  });
+
+  it(
+    '503 LOCK_TIMEOUT, если .desk/.lock удерживает другой владелец',
+    async () => {
+      await writeFile(lockPath(root), 'other-owner\n');
+      const res = await api({ method: 'POST', path: '/api/tasks', body: { title: 'Locked out' } });
+      expect(res.status).toBe(503);
+      expect(res.json()).toMatchObject({ ok: false, error: { code: 'LOCK_TIMEOUT' } });
+    },
+    8000,
+  );
+});
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+describe('SSE через /api/events', () => {
+  it('сообщает task_removed при удалении файла задачи', async () => {
+    await writeFile(taskPath(root, 'T-050'), 'placeholder');
+    // Даём файловому наблюдателю обработать add до удаления — иначе быстрый add+unlink
+    // иногда схлопывается нативным ФС-наблюдателем (fsevents) в одно событие.
+    await sleep(200);
+    const sse = await openSse(server.port);
+    try {
+      await unlink(taskPath(root, 'T-050'));
+      await vi.waitFor(() => expect(sse.text()).toContain('task_removed'), { timeout: 3000 });
+    } finally {
+      sse.close();
+    }
+  });
+
+  it('сообщает board_changed при правке board.yaml', async () => {
+    const sse = await openSse(server.port);
+    try {
+      await writeFile(boardPath(root), `${await readFile(boardPath(root), 'utf8')}\n`);
+      await vi.waitFor(() => expect(sse.text()).toContain('board_changed'), { timeout: 3000 });
+    } finally {
+      sse.close();
+    }
+  });
+});

@@ -1,4 +1,39 @@
-import {existsSync} from 'node:fs';import {readFile} from 'node:fs/promises';import {join} from 'node:path';import {describe,expect,it} from 'vitest';import {runCli,type CliIo,parseUiArgs,HELP} from '../../src/cli/run.js';import {toActorName} from '../../src/cli/git.js';import {makeEmptyDir,makeProject} from '../helpers/project.js';
+import {existsSync} from 'node:fs';import {readFile,writeFile} from 'node:fs/promises';import {join} from 'node:path';import {describe,expect,it} from 'vitest';import {runCli,type CliIo,parseUiArgs,HELP} from '../../src/cli/run.js';import {toActorName} from '../../src/cli/git.js';import {makeEmptyDir,makeProject} from '../helpers/project.js';
 function io(cwd:string){const out:string[]=[];const err:string[]=[];return{cwd,env:{},readStdin:async()=>'',out:(x:string)=>out.push(x),err:(x:string)=>err.push(x),outLines:out,errLines:err} as CliIo&{outLines:string[];errLines:string[]};}
 describe('cli',()=>{it('init создаёт проект и MCP-конфиг',async()=>{const root=await makeEmptyDir();const x=io(root);expect(await runCli(['init'],x)).toBe(0);expect(existsSync(join(root,'.desk','board.yaml'))).toBe(true);expect(JSON.parse(await readFile(join(root,'.mcp.json'),'utf8')).mcpServers.desk.command).toBe('desk');});it('validate и help',async()=>{const root=await makeProject();const x=io(root);expect(await runCli(['validate'],x)).toBe(0);expect(x.outLines[0]).toContain('OK');const h=io(root);expect(await runCli([],h)).toBe(0);expect(h.outLines.join()).toContain('desk init');});it.each([[[] as string[],4717],[['--port','5000','--open'] as string[],5000]])('parse ui %j',(args,expected)=>expect(parseUiArgs(args).port).toBe(expected));it('нормализует имя actor',()=>expect(toActorName('a: b · c')).toBe('a b c'));});
 describe('cli init hygiene',()=>{it('init добавляет в .gitignore служебные файлы только один раз',async()=>{const root=await makeEmptyDir();const {writeFile}=await import('node:fs/promises');await writeFile(join(root,'.gitignore'),'node_modules\n.desk/.lock\n');const x=io(root);expect(await runCli(['init','--claude-md'],x)).toBe(0);const lines=(await readFile(join(root,'.gitignore'),'utf8')).split('\n');expect(lines.filter((l)=>l==='.desk/.lock')).toHaveLength(1);expect(lines).toContain('.desk/.agent-runs.json');expect(lines).toContain('.desk/**/*.tmp');expect(lines[0]).toBe('node_modules');expect(await readFile(join(root,'CLAUDE.md'),'utf8')).toContain('list_tasks(assignee: <твой тип>, column: in_progress)');});it('help упоминает хуки',()=>expect(HELP).toContain('desk hooks install'));});
+
+describe('cli init: .mcp.json merge и отказ при существующем .desk', () => {
+  it('init сохраняет остальные ключи и mcpServers существующего .mcp.json', async () => {
+    const root = await makeEmptyDir();
+    await writeFile(
+      join(root, '.mcp.json'),
+      JSON.stringify({ mcpServers: { other: { command: 'other-mcp' } }, extra: 'keep-me' }),
+    );
+    expect(await runCli(['init'], io(root))).toBe(0);
+    const config = JSON.parse(await readFile(join(root, '.mcp.json'), 'utf8'));
+    expect(config.extra).toBe('keep-me');
+    expect(config.mcpServers.other).toEqual({ command: 'other-mcp' });
+    expect(config.mcpServers.desk.command).toBe('desk');
+  });
+
+  it('init отказывает и ничего не меняет, если .desk уже существует', async () => {
+    const root = await makeProject();
+    const before = await readFile(join(root, '.desk', 'board.yaml'), 'utf8');
+    const x = io(root);
+    expect(await runCli(['init'], x)).toBe(1);
+    expect(x.errLines.join('\n')).toContain('уже существует');
+    expect(await readFile(join(root, '.desk', 'board.yaml'), 'utf8')).toBe(before);
+    expect(existsSync(join(root, '.mcp.json'))).toBe(false);
+  });
+});
+
+describe('cli validate: невалидный файл задачи', () => {
+  it('validate возвращает 1, когда файл задачи не проходит валидацию', async () => {
+    const root = await makeProject();
+    await writeFile(join(root, '.desk', 'tasks', 'T-001.md'), 'мусор без frontmatter');
+    const x = io(root);
+    expect(await runCli(['validate'], x)).toBe(1);
+    expect(x.errLines.join('\n')).toContain('T-001');
+  });
+});
