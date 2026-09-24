@@ -68,7 +68,7 @@ export function App() {
       <main className="app-main">
         <Board board={board} tasks={visible} onOpen={openTask} onMove={handleMove} />
       </main>
-      {filters.task && <TaskPanel board={board} taskId={filters.task} version={version} onClose={closeTask} onError={pushToast} />}
+      {filters.task && <TaskPanel board={board} taskId={filters.task} version={version} onClose={closeTask} onError={pushToast} onMove={handleMove} />}
       {creating && (
         <CreateTaskDialog
           board={board}

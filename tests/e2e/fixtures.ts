@@ -15,6 +15,7 @@ export interface SeedTask {
   agent?: string;
   area?: string;
   estimate?: number;
+  description?: string;
   createdAt?: string;
 }
 
@@ -36,6 +37,7 @@ export function taskMarkdown(task: SeedTask): string {
     'history:',
     `  - { at: ${at}, by: seed, from: null, to: ${task.column} }`,
     '---',
+    ...(task.description ? ['', task.description] : []),
     '',
   ].join('\n');
 }

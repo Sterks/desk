@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFull } from '../api/types';
-import { buildUpdate, compactFields, defaultsFor, diffFields, fieldInfo, isDirty, toDraft } from './fields';
+import { buildUpdate, compactFields, defaultsFor, diffFields, fieldInfo, isDirty, mergeFresh, parseNumberInput, rebaseDraft, toDraft } from './fields';
 import { boardInfo, taskItem } from './test-fixtures';
 
 const task: TaskFull = {
@@ -37,4 +37,49 @@ describe('fields', () => {
     expect(buildUpdate(task, { ...draft, fields: { ...draft.fields, priority: 'p1' } })).toEqual({ fields: { priority: 'p1' } });
     expect(isDirty(task, { ...draft, description: 'x' })).toBe(true);
   });
+});
+
+describe('rebaseDraft / mergeFresh: свежая версия задачи и несохранённый черновик', () => {
+  const fresh: TaskFull = {
+    ...task,
+    description: 'Описание от агента',
+    fields: { priority: 'p0', area: ['backend'] },
+    updated_at: '2026-09-24T11:00:00Z',
+  };
+
+  it('переносит только то, что изменил человек; остальное берётся из свежей версии', () => {
+    const draft = { ...toDraft(task), title: 'Моё название' };
+    expect(rebaseDraft(task, draft, fresh)).toEqual({
+      title: 'Моё название',
+      description: 'Описание от агента',
+      assignee: 'dev',
+      fields: { priority: 'p0', area: ['backend'] },
+    });
+  });
+
+  it('правка поля и очистка поля переживают rebase, чужие поля — свежие', () => {
+    const draft = { ...toDraft(task), assignee: 'qa', fields: { priority: 'p2', area: null } };
+    const rebased = rebaseDraft(task, draft, fresh);
+    expect(rebased).toEqual({ title: task.title, description: 'Описание от агента', assignee: 'qa', fields: { priority: 'p0', area: null } });
+    expect(buildUpdate(fresh, rebased)).toEqual({ fields: { area: null, assignee: 'qa' } });
+  });
+
+  it('mergeFresh: чистый черновик заменяется, грязный — rebase, другая задача — с нуля', () => {
+    expect(mergeFresh(null, fresh)).toEqual({ task: fresh, draft: toDraft(fresh) });
+    expect(mergeFresh({ task, draft: toDraft(task) }, fresh)).toEqual({ task: fresh, draft: toDraft(fresh) });
+    const dirty = { task, draft: { ...toDraft(task), title: 'Моё название' } };
+    expect(mergeFresh(dirty, fresh).draft.description).toBe('Описание от агента');
+    expect(mergeFresh(dirty, fresh).draft.title).toBe('Моё название');
+    const other = { ...fresh, id: 'T-002' };
+    expect(mergeFresh(dirty, other)).toEqual({ task: other, draft: toDraft(other) });
+  });
+});
+
+describe('parseNumberInput', () => {
+  it.each([
+    ['', null],
+    ['5', 5],
+    ['5.5', 5.5],
+    ['-2', -2],
+  ])('%j → %j', (text, expected) => expect(parseNumberInput(text)).toBe(expected));
 });

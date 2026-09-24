@@ -201,3 +201,42 @@ test('счётчик WIP: на лимите — full, сверх лимита �
   });
   await expect(column(page, 'In progress').locator('.column-count')).toHaveCSS('color', critical);
 });
+
+test('панель: параллельная запись агента не откатывается при сохранении чужой правки', async ({ page }) => {
+  const base = { id: 'T-001', title: 'Исходное', column: 'backlog', priority: 'p2' };
+  await openBoard(page, [base]);
+  await card(page, 'T-001').getByRole('button', { name: 'Исходное' }).click();
+  const panel = page.getByRole('dialog', { name: 'T-001' });
+  await panel.getByLabel('Название').fill('Моё название');
+  // Пока правка не сохранена, агент пишет в тот же файл: другой priority и описание.
+  await writeTask({ ...base, priority: 'p0', description: 'Находка агента' });
+  await expect(panel.getByLabel('priority')).toHaveValue('p0');
+  await expect(panel.getByText('Находка агента')).toBeVisible();
+  await expect(panel.getByLabel('Название')).toHaveValue('Моё название');
+  await panel.getByRole('button', { name: 'Сохранить' }).click();
+  await expect.poll(() => readTask('T-001')).toContain('title: Моё название');
+  const saved = await readTask('T-001');
+  expect(saved).toContain('priority: p0');
+  expect(saved).toContain('Находка агента');
+});
+
+test('панель: перенос через выбор колонки открывает окно requires, как drag-and-drop', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Без исполнителя', column: 'backlog' }]);
+  await card(page, 'T-001').getByRole('button', { name: 'Без исполнителя' }).click();
+  const panel = page.getByRole('dialog', { name: 'T-001' });
+  await panel.getByLabel('Колонка').selectOption('in_progress');
+  const dialog = page.getByRole('dialog', { name: 'T-001 → In progress' });
+  await expect(dialog).toBeVisible();
+  await expect(panel.getByLabel('Колонка')).toHaveValue('backlog');
+  // Escape закрывает только окно requires, панель остаётся.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(panel).toBeVisible();
+  await panel.getByLabel('Колонка').selectOption('in_progress');
+  await expect(dialog.getByLabel('assignee')).toBeFocused();
+  await dialog.getByLabel('assignee').fill('panel-agent');
+  await dialog.getByRole('button', { name: 'Перенести' }).click();
+  await expect(column(page, 'In progress').getByTestId('card-T-001')).toBeVisible();
+  await expect(panel.getByLabel('Колонка')).toHaveValue('in_progress');
+  await expect.poll(() => readTask('T-001')).toContain('assignee: panel-agent');
+});

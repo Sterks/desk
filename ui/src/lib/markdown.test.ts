@@ -21,5 +21,9 @@ describe('renderMarkdown', () => {
     expect(html).toContain('target="_blank"');
   });
 
+  it('mailto: и голые адреса не становятся ссылками', () => {
+    expect(renderMarkdown('[m](mailto:x@y.z) a@b.com')).not.toContain('href');
+  });
+
   it('рендерит markdown', () => expect(renderMarkdown('**жирный**')).toContain('<strong>жирный</strong>'));
 });

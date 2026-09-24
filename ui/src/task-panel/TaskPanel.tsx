@@ -1,15 +1,10 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { api, errorMessage } from '../api/client';
-import type { BoardInfo, FieldValue, TaskFull } from '../api/types';
-import { ASSIGNEE_FIELD, buildUpdate, isDirty, toDraft, type TaskDraft } from '../lib/fields';
+import type { BoardInfo, FieldValue, TaskFull, TaskItem } from '../api/types';
+import { ASSIGNEE_FIELD, buildUpdate, isDirty, mergeFresh, toDraft, type PanelState, type TaskDraft } from '../lib/fields';
 import { formatTime } from '../lib/format';
 import { Markdown } from '../ui/Markdown';
 import { FieldRow } from './FieldInput';
-
-interface PanelState {
-  task: TaskFull;
-  draft: TaskDraft;
-}
 
 export interface TaskPanelProps {
   board: BoardInfo;
@@ -17,15 +12,11 @@ export interface TaskPanelProps {
   version: number;
   onClose(): void;
   onError(message: string): void;
+  /** Тот же путь, что у drag-and-drop в App: при нехватке полей откроется окно requires. */
+  onMove(task: TaskItem, to: string): void;
 }
 
-/** Новая версия задачи с сервера не затирает несохранённые правки. */
-const mergeFresh = (prev: PanelState | null, next: TaskFull): PanelState =>
-  prev && prev.task.id === next.id && isDirty(prev.task, prev.draft)
-    ? { task: next, draft: prev.draft }
-    : { task: next, draft: toDraft(next) };
-
-export function TaskPanel({ board, taskId, version, onClose, onError }: TaskPanelProps) {
+export function TaskPanel({ board, taskId, version, onClose, onError, onMove }: TaskPanelProps) {
   const [state, setState] = useState<PanelState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingDescription, setEditingDescription] = useState(false);
@@ -52,7 +43,8 @@ export function TaskPanel({ board, taskId, version, onClose, onError }: TaskPane
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
+      // Открытое поверх панели окно (Modal) само обрабатывает Escape и помечает событие.
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -98,7 +90,7 @@ export function TaskPanel({ board, taskId, version, onClose, onError }: TaskPane
 
   const moveTo = (to: string): void => {
     if (!state || to === state.task.column) return;
-    void run(() => api.move(state.task.id, to));
+    onMove(state.task, to);
   };
 
   const column = state ? board.columns.find((c) => c.id === state.task.column) : undefined;

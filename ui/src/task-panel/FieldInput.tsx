@@ -1,4 +1,6 @@
+import { useId } from 'react';
 import type { FieldInfo, FieldValue } from '../api/types';
+import { parseNumberInput } from '../lib/fields';
 
 export interface FieldInputProps {
   def: FieldInfo;
@@ -54,7 +56,7 @@ export function FieldInput({ def, value, onChange, inputId }: FieldInputProps) {
           value={typeof value === 'number' ? value : ''}
           min={def.min ?? undefined}
           max={def.max ?? undefined}
-          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+          onChange={(e) => onChange(parseNumberInput(e.target.value))}
         />
       );
     case 'text':
@@ -73,7 +75,8 @@ export function FieldInput({ def, value, onChange, inputId }: FieldInputProps) {
 }
 
 export function FieldRow({ def, value, onChange }: Omit<FieldInputProps, 'inputId'>) {
-  const inputId = `field-${def.id}`;
+  // useId: окно requires открывается поверх панели с теми же полями — id не должны совпадать.
+  const inputId = `field-${def.id}-${useId()}`;
   return (
     <div className="field-row">
       <label htmlFor={inputId}>

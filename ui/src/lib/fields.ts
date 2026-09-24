@@ -58,3 +58,36 @@ export function isDirty(task: TaskFull, draft: TaskDraft): boolean {
   const update = buildUpdate(task, draft);
   return update.title !== undefined || update.description !== undefined || Object.keys(update.fields).length > 0;
 }
+
+/** Значение `<input type="number">`: пустая строка — поле очищено (`null`). */
+export function parseNumberInput(text: string): number | null {
+  return text === '' ? null : Number(text);
+}
+
+export interface PanelState {
+  task: TaskFull;
+  draft: TaskDraft;
+}
+
+/**
+ * Переносит несохранённые правки человека на свежую версию задачи: из черновика берётся только то,
+ * чем он отличался от своей базы (`base`), всё остальное — из `next`. Иначе сохранение молча
+ * откатило бы параллельную запись агента в поля, которых человек не касался.
+ */
+export function rebaseDraft(base: TaskFull, draft: TaskDraft, next: TaskFull): TaskDraft {
+  const fresh = toDraft(next);
+  const { title, description, fields } = buildUpdate(base, draft);
+  const { assignee, ...changedFields } = fields;
+  return {
+    title: title ?? fresh.title,
+    description: description ?? fresh.description,
+    assignee: assignee === undefined ? fresh.assignee : draft.assignee,
+    fields: { ...fresh.fields, ...changedFields },
+  };
+}
+
+/** Новая версия задачи с сервера: чистый черновик заменяется, грязный — переносится через rebaseDraft. */
+export function mergeFresh(prev: PanelState | null, next: TaskFull): PanelState {
+  if (!prev || prev.task.id !== next.id || !isDirty(prev.task, prev.draft)) return { task: next, draft: toDraft(next) };
+  return { task: next, draft: rebaseDraft(prev.task, prev.draft, next) };
+}
