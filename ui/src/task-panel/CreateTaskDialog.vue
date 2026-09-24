@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
 import TNInput from '@life_uikit/uikit/components/input/input.vue';
-import TNSelectV2 from '@life_uikit/uikit/components/select_v2/select_v2.vue';
+import TNFormItem from '@life_uikit/uikit/components/form-item/form-item.vue';
 import TNButton from '@life_uikit/uikit/components/button/button.vue';
 import TNPopup from '@life_uikit/uikit/components/popup/popup.vue';
 import { api, errorMessage } from '../api/client';
@@ -77,7 +77,12 @@ async function submit(): Promise<void> {
             <TNInput label="title" required v-model="title" />
           </div>
           <div class="field-row">
-            <TNSelectV2 label="column" value-key="id" :options="board.columns" v-model="column" />
+            <!-- Нативный <select>, не TNSelectV2 (у того триггер — <div> без role и клавиатуры), см. FieldInput.vue. -->
+            <TNFormItem label="column" item-id="new-column">
+              <select id="new-column" v-model="column" class="control">
+                <option v-for="c in board.columns" :key="c.id" :value="c.id">{{ c.title }}</option>
+              </select>
+            </TNFormItem>
           </div>
           <FieldInput :def="ASSIGNEE_FIELD" :value="assignee || undefined" @update:value="(v) => (assignee = typeof v === 'string' ? v : '')" />
           <FieldInput v-for="f in board.fields" :key="f.id" :def="f" :value="fields[f.id] ?? undefined" @update:value="(v) => (fields = { ...fields, [f.id]: v })" />

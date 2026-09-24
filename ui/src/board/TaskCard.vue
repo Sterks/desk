@@ -18,12 +18,13 @@ const time = computed(() =>
 </script>
 
 <template>
-  <!-- Сам <article> — перетаскиваемый элемент SortableJS (прямой потомок списка VueDraggable,
+  <!-- Сам <div> — перетаскиваемый элемент SortableJS (прямой потомок списка VueDraggable,
        обёртки нет): data-task-id читает Column.vue в onStart. role="group", а не button: внутри
        есть кнопка названия. aria-roledescription — «карточка задачи», а не «перетаскиваемая
        задача», как было при @dnd-kit: у SortableJS нет перетаскивания с клавиатуры, и обещать его
-       скринридеру нельзя. Перенос без мыши — поле «Колонка» в панели задачи. -->
-  <article
+       скринридеру нельзя. Перенос без мыши — поле «Колонка» в панели задачи. <div>, а не <article>:
+       axe (aria-allowed-role) не разрешает role="group" на <article>; так же было в React-версии. -->
+  <div
     class="card"
     role="group"
     aria-roledescription="карточка задачи"
@@ -42,5 +43,5 @@ const time = computed(() =>
     <footer class="card-meta">
       <span v-if="task.assignee" class="assignee" :style="{ '--agent-color': agentColor(task.assignee) }">{{ task.assignee }}</span>
     </footer>
-  </article>
+  </div>
 </template>

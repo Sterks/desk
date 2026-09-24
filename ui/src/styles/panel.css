@@ -18,8 +18,9 @@
 .error-list { margin: 0; padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5); font-size: var(--text-sm); background: var(--invalid-bg); }
 .fields-grid { display: grid; gap: var(--space-3); }
 
-/* Реальные поля (enum/multi_enum/bool/number/text/строка) рисуют TNInput/TNTextarea/TNCheckbox/
-   TNSelectV2/TNMultiSelector — они сами оформляют лейбл, описание, обязательность и ошибку
+/* Реальные поля (multi_enum/bool/number/text/строка) рисуют TNInput/TNTextarea/TNCheckbox/
+   TNMultiSelector, enum — нативный <select> внутри TNFormItem (Task 9: TNSelectV2 недоступен с
+   клавиатуры); все они оформляют лейбл, описание, обязательность и ошибку
    (form-item.vue), поэтому `.field-row` больше не задаёт 2-колоночную сетку и не стилизует лейбл. */
 .stale-field { display: grid; grid-template-columns: 8rem 1fr; gap: var(--space-1) var(--space-3); align-items: start; }
 .stale-field > .field-label { padding-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--wip-over); }

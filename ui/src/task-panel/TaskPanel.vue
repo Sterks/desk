@@ -99,9 +99,17 @@ function submitNote(): void {
   });
 }
 
-function moveTo(to: string): void {
+function moveTo(e: Event): void {
+  const select = e.target as HTMLSelectElement;
   const current = state.value;
-  if (!current || to === current.task.column) return;
+  if (!current) return;
+  const to = select.value;
+  // Нативный <select> сам уже показывает выбранную колонку, а :value Vue перепишет DOM только когда
+  // изменится state.task.column. Пока ждём окна requires или ответа сервера (или после отмены/отказа)
+  // select должен показывать реальную колонку задачи — возвращаем его сразу; успешный перенос
+  // обновит task.column, и Vue выставит новое значение сам. (В React это делал controlled value.)
+  select.value = current.task.column;
+  if (to === current.task.column) return;
   emit('move', current.task, to);
 }
 
@@ -130,7 +138,7 @@ const stale = computed(() => (state.value ? undeclaredFields(props.board, state.
         aria-label="Колонка"
         :value="state.task.column"
         :disabled="saving"
-        @change="moveTo(($event.target as HTMLSelectElement).value)"
+        @change="moveTo"
       >
         <option v-if="!column" :value="state.task.column">{{ state.task.column }} (нет в board.yaml)</option>
         <option v-for="c in moveOptions" :key="c.id" :value="c.id">{{ c.title }}</option>

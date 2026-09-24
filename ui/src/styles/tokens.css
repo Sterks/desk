@@ -8,17 +8,26 @@
   --card-shadow: var(--shadow-small);
 
   --text: var(--content-primary-a-enabled);
-  --text-muted: var(--content-secondary-enabled);
-  --text-faint: var(--content-tertiary-enabled);
+  /* Контраст (WCAG AA 4.5:1, axe color-contrast — Task 9): кит-овые --content-secondary-enabled
+     (neutral-60) на --column-bg дают 4.4:1 в светлой теме и 3.0:1 в тёмной, а системные цвета
+     (red-60/orange-40/blue-55) на своих подложках — 2.1–3.8:1. Поэтому текстовые оттенки ниже —
+     смесь кит-ового цвета с --text: в светлой теме она темнеет, в тёмной светлеет, т.е. контраст
+     растёт в обеих темах, а тон остаётся кит-овым (hex не вводим). Мелкий текст 11–12px, поэтому
+     нужен именно 4.5:1. Проверено по значениям variables.css/variables-dark.css: muted ≥ 4.8:1
+     на column/card/tag-подложках, тоны ≥ 4.8:1, --wip-over ≥ 4.8:1 в обеих темах. */
+  --text-muted: color-mix(in srgb, var(--content-secondary-enabled) 65%, var(--text));
+  --tone-negative: color-mix(in srgb, var(--content-system-negative) 55%, var(--text));
+  --tone-warning: color-mix(in srgb, var(--content-system-warning) 55%, var(--text));
+  --tone-action: color-mix(in srgb, var(--content-action-enabled) 55%, var(--text));
 
   --focus-ring: var(--content-accent-enabled);
   --button-primary-bg: var(--background-accent-enabled);
 
   --tag-bg: var(--background-tertiary-enabled);
-  --tag-fg: var(--content-secondary-enabled);
+  --tag-fg: var(--text-muted);
 
-  --wip-ok: var(--content-tertiary-enabled);
-  --wip-over: var(--content-system-negative);
+  --wip-full: var(--tone-warning);
+  --wip-over: color-mix(in srgb, var(--content-system-negative) 60%, var(--text));
 
   --invalid-border: var(--content-system-negative);
   --invalid-bg: color-mix(in srgb, var(--content-system-negative) 8%, var(--card-bg));
@@ -53,8 +62,8 @@
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.priority-p0 { color: var(--content-system-negative); background: color-mix(in srgb, var(--content-system-negative) 14%, var(--card-bg)); }
-.priority-p1 { color: var(--content-system-warning); background: color-mix(in srgb, var(--content-system-warning) 14%, var(--card-bg)); }
-.priority-p2 { color: var(--content-action-enabled); background: color-mix(in srgb, var(--content-action-enabled) 12%, var(--card-bg)); }
+.priority-p0 { color: var(--tone-negative); background: color-mix(in srgb, var(--content-system-negative) 14%, var(--card-bg)); }
+.priority-p1 { color: var(--tone-warning); background: color-mix(in srgb, var(--content-system-warning) 14%, var(--card-bg)); }
+.priority-p2 { color: var(--tone-action); background: color-mix(in srgb, var(--content-action-enabled) 12%, var(--card-bg)); }
 .priority-p3 { color: var(--content-system-neutral); background: var(--background-tertiary-enabled); }
 .priority-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }

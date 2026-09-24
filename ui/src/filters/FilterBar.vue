@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import TNSelectV2 from '@life_uikit/uikit/components/select_v2/select_v2.vue';
 import TNButton from '@life_uikit/uikit/components/button/button.vue';
 import type { BoardInfo, TaskItem } from '../api/types';
 import type { Filters } from '../lib/filters';
@@ -36,22 +35,29 @@ function onSearchInput(e: Event): void {
       :value="filters.q"
       @input="onSearchInput"
     />
-    <TNSelectV2
+    <!-- Фильтры — нативные <select> с aria-label, как в React-версии, а не TNSelectV2: у того
+         триггер — <div> без role/tabindex/клавиатуры, а aria-label падал на инертную обёртку
+         .tn-form-item (fallthrough на корень компонента). Нативный select — combobox с именем. -->
+    <select
+      class="control"
       aria-label="Исполнитель"
-      placeholder="Исполнитель"
-      :options="assignees"
-      :model-value="filters.assignee || undefined"
-      @update:model-value="(v) => emit('change', { assignee: v ?? '' })"
-    />
-    <TNSelectV2
+      :value="filters.assignee"
+      @change="emit('change', { assignee: ($event.target as HTMLSelectElement).value })"
+    >
+      <option value="">все исполнители</option>
+      <option v-for="a in assignees" :key="a" :value="a">{{ a }}</option>
+    </select>
+    <select
       v-for="f in enumFields"
       :key="f.id"
+      class="control"
       :aria-label="f.id"
-      :placeholder="f.id"
-      :options="f.values ?? []"
-      :model-value="filters.fields[f.id] || undefined"
-      @update:model-value="(v) => emit('change', { fields: { ...filters.fields, [f.id]: v ?? '' } })"
-    />
+      :value="filters.fields[f.id] ?? ''"
+      @change="emit('change', { fields: { ...filters.fields, [f.id]: ($event.target as HTMLSelectElement).value } })"
+    >
+      <option value="">{{ f.id }}: все</option>
+      <option v-for="v in f.values ?? []" :key="v" :value="v">{{ v }}</option>
+    </select>
     <TNButton type="action" @click="emit('create')">Новая задача</TNButton>
   </form>
 </template>
