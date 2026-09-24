@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+tests/e2e/.tmp-project/
+.desk/.lock
+.desk/.agent-runs.json
+.desk/**/*.tmp
