@@ -6,6 +6,8 @@
   padding: var(--space-4);
   overflow-x: auto;
   scroll-snap-type: x proximity;
+  /* Без отступа snap прижимает первую колонку к краю и съедает padding доски. */
+  scroll-padding-inline: var(--space-4);
 }
 
 .column {

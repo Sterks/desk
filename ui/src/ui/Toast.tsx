@@ -26,7 +26,7 @@ export function useToasts() {
 
 export function ToastStack({ items, onDismiss }: { items: ToastItem[]; onDismiss(id: number): void }) {
   return (
-    <div className="toasts" role="status" aria-live="polite">
+    <div className="toasts" role="status" aria-live="polite" aria-label="Уведомления">
       {items.map((toast) => (
         <div key={toast.id} className="toast" data-kind={toast.kind}>
           <span>{toast.text}</span>
