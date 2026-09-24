@@ -6,6 +6,7 @@ import '@fontsource/ibm-plex-mono/500.css';
 import './styles/tokens.css';
 import './styles/global.css';
 import './styles/board.css';
+import './styles/panel.css';
 import { createApp } from 'vue';
 import TNLifeUIKit from '@life_uikit/uikit';
 import App from './App.vue';
