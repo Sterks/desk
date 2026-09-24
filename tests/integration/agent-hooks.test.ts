@@ -142,7 +142,22 @@ describe('desk hook agent-start', () => {
     const byId = new Map((await tasks(root)).map((t) => [t.id, t]));
     expect(byId.get('T-001')?.notes.map((n) => n.text)).toEqual(['hook: сабагент запущен (agent-x)']);
     expect(byId.get('T-002')?.notes.map((n) => n.text)).toEqual(['hook: запуск не подтверждён']);
+    expect(byId.get('T-002')?.column).toBe('backlog');
     expect(byId.get('T-003')?.notes).toEqual([]);
+    expect(byId.get('T-003')?.column).toBe('in_progress');
+  });
+
+  it('a stale card that cannot go back gets a "move manually" note', async () => {
+    const root = await makeProject('version: 1\ncolumns:\n  - id: todo\n  - id: doing\n  - id: done\ntransitions:\n  - from: todo\n    to: doing\n  - from: doing\n    to: done\n');
+    await start(root, preToolUse(root, { tool_use_id: 'old' }), '2026-09-24T00:00:00Z');
+    await start(root, preToolUse(root, { tool_use_id: 'new' }), '2026-09-24T07:00:00Z');
+    const [stale] = await tasks(root);
+    expect(stale?.column).toBe('doing');
+    expect(stale?.notes.map((n) => n.text)).toEqual([
+      'hook: запуск не подтверждён',
+      expect.stringMatching(/^hook: перенеси вручную — Переход doing → todo запрещён/),
+    ]);
+    expect(Object.keys(await runs(root))).toEqual(['new']);
   });
 
   it('warns about a corrupt run map and rewrites it', async () => {

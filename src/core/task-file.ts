@@ -127,9 +127,12 @@ export function splitBody(body: string): { description: string; notes: Note[] } 
 
 const mapLines = (text: string, fn: (line: string) => string): string => text.split('\n').map(fn).join('\n');
 
-/** `## Notes` в описании пишется как `\## Notes`, чтобы не спутать его с настоящим разделом заметок. */
+/**
+ * `## Notes` в описании пишется как `\## Notes`, чтобы не спутать его с настоящим разделом заметок.
+ * Переводы строк сначала приводятся к `\n`: иначе `\r\n## Notes` обошёл бы экранирование и дал поддельные заметки.
+ */
 export function escapeDescription(text: string): string {
-  return mapLines(text, (line) => (ESCAPABLE_RE.test(line) ? `\\${line}` : line));
+  return mapLines(text.replace(/\r\n?/g, '\n'), (line) => (ESCAPABLE_RE.test(line) ? `\\${line}` : line));
 }
 
 export function unescapeDescription(text: string): string {

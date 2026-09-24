@@ -95,7 +95,10 @@ async function moveOrNote(root: string, board: Board, id: string, to: string, fi
   }
 }
 
-/** Убирает неподтверждённые запуски старше 6 часов и отмечает это на их карточках. */
+/**
+ * Убирает неподтверждённые запуски старше 6 часов (например, вызов отклонён в диалоге прав — об этом не приходит
+ * ни одно событие): заметка на карточке и возврат в первую колонку, как у PostToolUseFailure/PermissionDenied.
+ */
 async function sweepStale(root: string, board: Board, { warn, clock }: HookContext): Promise<void> {
   const stale = await transactRuns(root, (runs) => {
     const found = staleRuns(runs, clock(), STALE_RUN_MS);
@@ -104,6 +107,8 @@ async function sweepStale(root: string, board: Board, { warn, clock }: HookConte
   for (const [, run] of stale) {
     try {
       await note(root, board, run.task, 'hook: запуск не подтверждён', clock);
+      const first = board.columns[0]?.id;
+      if (first !== undefined) await moveOrNote(root, board, run.task, first, {}, 'hook: перенеси вручную', clock);
     } catch (e) {
       warn(`${run.task}: ${e instanceof Error ? e.message : String(e)}`);
     }

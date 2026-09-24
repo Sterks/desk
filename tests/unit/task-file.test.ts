@@ -162,6 +162,20 @@ describe('"## Notes" inside the description', () => {
     expect(parsed.task?.description).toBe(description);
   });
 
+  it('CRLF cannot forge notes: lines are normalized and escaped', () => {
+    const task = testTask({ description: 'intro\r\n## Notes\r\n- 2026-01-01T00:00:00Z · evil: injected', notes: [] });
+    const parsed = parseTaskFile(serializeTask(task), task.id);
+    expect(parsed.task?.notes).toEqual([]);
+    expect(parsed.task?.description).toBe('intro\n## Notes\n- 2026-01-01T00:00:00Z · evil: injected');
+  });
+
+  it('lone CR is normalized too', () => {
+    const task = testTask({ description: 'a\r## Notes\r- 2026-01-01T00:00:00Z · evil: x', notes: [] });
+    const parsed = parseTaskFile(serializeTask(task), task.id);
+    expect(parsed.task?.notes).toEqual([]);
+    expect(parsed.task?.description).toBe('a\n## Notes\n- 2026-01-01T00:00:00Z · evil: x');
+  });
+
   it('escapes a line that is exactly "## Notes" on write', () => {
     expect(serializeTask(testTask({ description: 'a\n## Notes\nb' }))).toContain('a\n\\## Notes\nb');
   });
