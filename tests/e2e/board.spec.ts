@@ -195,6 +195,105 @@ test('панель: числовое поле сохраняется, отпра
   await expect.poll(() => readTask('T-001')).toContain('estimate: 5');
 });
 
+// Final-review Critical #1: TNInput — это type="text", и `1,5`/`-`/`5x` раньше давали NaN → JSON null →
+// сохранение молча стирало estimate. Теперь невалидный текст показывает ошибку и блокирует сохранение
+// (даже вместе с другой, валидной правкой), а в черновик не попадает вовсе.
+test('панель: невалидное число не стирает значение — ошибка и блокировка сохранения', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Оценка', column: 'backlog', estimate: 2 }]);
+  await card(page, 'T-001').getByRole('button', { name: 'Оценка' }).click();
+  const panel = page.getByRole('dialog', { name: 'T-001' });
+  const estimate = panel.getByLabel('estimate');
+  const save = panel.getByRole('button', { name: 'Сохранить' });
+  await panel.getByLabel('Название').fill('Новое название');
+  await expect(save).toBeEnabled();
+  for (const bad of ['1,5', '-', '5x']) {
+    await estimate.fill(bad);
+    await expect(panel.getByText('Не число. Дробную часть отделяйте точкой: 1.5')).toBeVisible();
+    await expect(save).toBeDisabled();
+  }
+  expect(await readTask('T-001')).toContain('estimate: 2');
+
+  await estimate.fill('1.5');
+  await expect(panel.getByText('Не число.')).toHaveCount(0);
+  const patch = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/tasks/T-001'));
+  await save.click();
+  expect((await patch).postDataJSON()).toEqual({ title: 'Новое название', fields: { estimate: 1.5 } });
+  await expect.poll(() => readTask('T-001')).toContain('estimate: 1.5');
+});
+
+// `-5` — валидное число: уходит как -5 (не null), сервер отказывает (min: 0), файл не меняется.
+// Пустое поле — осознанная очистка: единственный путь к `estimate: null`.
+test('панель: -5 отправляется числом и отклоняется сервером; пустое поле очищает значение', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Оценка', column: 'backlog', estimate: 2 }]);
+  await card(page, 'T-001').getByRole('button', { name: 'Оценка' }).click();
+  const panel = page.getByRole('dialog', { name: 'T-001' });
+  const estimate = panel.getByLabel('estimate');
+  const save = panel.getByRole('button', { name: 'Сохранить' });
+
+  await estimate.fill('-5');
+  const rejected = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith('/api/tasks/T-001'));
+  await save.click();
+  const response = await rejected;
+  expect(response.request().postDataJSON()).toEqual({ fields: { estimate: -5 } });
+  expect(response.ok()).toBe(false);
+  await expect(toasts(page).locator('.toast')).toHaveCount(1);
+  expect(await readTask('T-001')).toContain('estimate: 2');
+
+  await estimate.fill('');
+  const cleared = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/tasks/T-001'));
+  await save.click();
+  expect((await cleared).postDataJSON()).toEqual({ fields: { estimate: null } });
+  await expect.poll(() => readTask('T-001')).not.toContain('estimate');
+});
+
+// Первый критерий успеха спеки: задача создаётся через окно и появляется на доске.
+test('окно «Новая задача»: фокус в title, задача создаётся, появляется на доске и в файле', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Есть', column: 'backlog' }]);
+  await page.getByRole('button', { name: 'Новая задача' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Новая задача' });
+  await expect(dialog.getByLabel('title')).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Создать' })).toBeDisabled();
+  await dialog.getByLabel('title').fill('Создана из окна');
+  await dialog.getByLabel('priority').selectOption('p1');
+  await dialog.getByLabel('assignee').fill('ui-agent');
+  await dialog.getByLabel('estimate').fill('3');
+  await dialog.getByLabel('description').fill('Описание из окна');
+  await dialog.getByRole('button', { name: 'Создать' }).click();
+
+  await expect(page).toHaveURL(/task=T-\d+/);
+  const id = new URL(page.url()).searchParams.get('task') ?? '';
+  expect(id).not.toBe('T-001');
+  await expect(page.getByLabel('title')).toHaveCount(0);
+  const created = column(page, 'Backlog').getByTestId(`card-${id}`);
+  await expect(created).toContainText('Создана из окна');
+  await expect(created).toContainText('ui-agent');
+  await expect(page.getByRole('dialog', { name: id }).getByLabel('Название')).toHaveValue('Создана из окна');
+  const saved = await readTask(id);
+  expect(saved).toContain('title: Создана из окна');
+  expect(saved).toContain('priority: p1');
+  expect(saved).toContain('assignee: ui-agent');
+  expect(saved).toContain('estimate: 3');
+  expect(saved).toContain('Описание из окна');
+});
+
+// Final-review #2: TNButton «Новая задача» — `<button>` без type внутри `<form role="search">`, то
+// есть неявная submit-кнопка: Enter в поиске «нажимал» её. Окно открывается синхронно из обработчика
+// клика, поэтому двух кадров после Enter достаточно, чтобы оно успело бы появиться.
+test('Enter в поле поиска не открывает окно «Новая задача»', async ({ page }) => {
+  await openBoard(page, [{ id: 'T-001', title: 'Логин', column: 'backlog' }]);
+  const search = page.getByRole('searchbox', { name: 'Поиск по ID и названию' });
+  await search.fill('Логин');
+  await search.press('Enter');
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.getByLabel('title')).toHaveCount(0);
+  await expect(search).toBeFocused();
+  await expect(card(page, 'T-001')).toBeVisible();
+  // Сама кнопка по-прежнему работает — и она больше не submit.
+  await expect(page.getByRole('button', { name: 'Новая задача' })).toHaveAttribute('type', 'button');
+  await page.getByRole('button', { name: 'Новая задача' }).click();
+  await expect(page.getByRole('dialog', { name: 'Новая задача' }).getByLabel('title')).toBeVisible();
+});
+
 test('панель: живое обновление не затирает несохранённую правку', async ({ page }) => {
   await openBoard(page, [{ id: 'T-001', title: 'Исходное', column: 'backlog' }]);
   await card(page, 'T-001').getByRole('button', { name: 'Исходное' }).click();
@@ -381,4 +480,48 @@ test('тема: следует за ОС без ручного выбора; р�
   await expect(html).not.toHaveClass(/tn-dark-theme/);
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(html).not.toHaveClass(/tn-dark-theme/);
+});
+
+// Final-review #4: тема применяется до монтирования (main.ts → initTheme), а не в ThemeToggle, который
+// живёт только в загруженной доске. Ответ /api/board держим, пока проверяем экран загрузки.
+test('тема: тёмная тема ОС стоит уже на экране загрузки, иконка следует за сменой темы ОС', async ({ page }) => {
+  await seed([{ id: 'T-001', title: 'Тема', column: 'backlog' }]);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/board', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.goto('/');
+  await expect(page.getByText('Загрузка доски…')).toBeVisible();
+  await expect(page.locator('html')).toHaveClass(/tn-dark-theme/);
+  release();
+  await expect(card(page, 'T-001')).toBeVisible();
+
+  const toggle = page.getByRole('button', { name: 'Переключить тему' });
+  await expect(toggle).toHaveText('☾');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).not.toHaveClass(/tn-dark-theme/);
+  await expect(toggle).toHaveText('☀');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(toggle).toHaveText('☾');
+});
+
+test('тема: аварийный экран приложения тоже в тёмной теме; «Перезагрузить доску» убирает query из URL', async ({ page }) => {
+  await seed([]);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  let broken = true;
+  await page.route('**/api/board', (route) =>
+    broken ? route.fulfill({ json: { ok: true, data: { name: 'broken' } } }) : route.continue(),
+  );
+  await page.goto('/?task=T-404&q=x');
+  await expect(page.getByRole('alert').filter({ hasText: 'Интерфейс desk не отрисовался' })).toBeVisible();
+  await expect(page.locator('html')).toHaveClass(/tn-dark-theme/);
+  broken = false;
+  await page.getByRole('button', { name: 'Перезагрузить доску' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('alert').filter({ hasText: 'Интерфейс desk не отрисовался' })).toHaveCount(0);
 });

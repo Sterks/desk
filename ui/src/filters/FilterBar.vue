@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import TNButton from '@life_uikit/uikit/components/button/button.vue';
 import type { BoardInfo, TaskItem } from '../api/types';
 import type { Filters } from '../lib/filters';
@@ -9,6 +9,17 @@ const emit = defineEmits<{ change: [Partial<Filters>]; create: [] }>();
 
 const assignees = computed(() => [...new Set(props.tasks.flatMap((t) => (t.assignee ? [t.assignee] : [])))].sort());
 const enumFields = computed(() => props.board.fields.filter((f) => (f.type === 'enum' || f.type === 'multi_enum') && f.values));
+
+/*
+ * TNButton рендерит `<button>` без атрибута `type` (проп `type` у него — визуальный стиль, см.
+ * button.types.ts), а такой `<button>` внутри `<form role="search">` — неявная submit-кнопка формы:
+ * Enter в поле поиска «нажимал» её и открывал окно «Новая задача». Проп перехватывает `type`, так что
+ * `type="button"` на `<TNButton>` до элемента не дойдёт; ставим нативный атрибут на корневой
+ * `<button>` компонента сами (Vue его не перепишет — атрибут не связан с шаблоном TNButton). Без
+ * submit-кнопок Enter в единственном поле всё ещё отправляет форму, но submit гасит `.prevent`.
+ */
+const createButton = ref<{ $el: HTMLElement } | null>(null);
+onMounted(() => createButton.value?.$el.setAttribute('type', 'button'));
 
 function onSearchInput(e: Event): void {
   emit('change', { q: (e.target as HTMLInputElement).value });
@@ -58,6 +69,6 @@ function onSearchInput(e: Event): void {
       <option value="">{{ f.id }}: все</option>
       <option v-for="v in f.values ?? []" :key="v" :value="v">{{ v }}</option>
     </select>
-    <TNButton type="action" @click="emit('create')">Новая задача</TNButton>
+    <TNButton ref="createButton" type="action" @click="emit('create')">Новая задача</TNButton>
   </form>
 </template>

@@ -7,6 +7,8 @@ import type { BoardInfo, TaskItem } from '../api/types';
 import { compactFields, fieldInfo, type Draft } from '../lib/fields';
 import { isEmptyValue } from '../lib/transitions';
 import { useDialogStack } from '../composables/useDialogStack';
+import { useFieldValidity } from '../composables/useFieldValidity';
+import { firstField } from '../lib/focus';
 import FieldInput from './FieldInput.vue';
 
 const props = defineProps<{
@@ -28,11 +30,7 @@ const saving = ref(false);
 const { register } = useDialogStack();
 let unregister: (() => void) | undefined;
 const formEl = ref<HTMLFormElement | null>(null);
-/** Первое реально доступное поле: kit-компоненты могут держать скрытые/отключённые input внутри. */
-function firstField(): HTMLElement | undefined {
-  const candidates = formEl.value?.querySelectorAll<HTMLInputElement>('input, select, textarea') ?? [];
-  return Array.from(candidates).find((el) => el.type !== 'hidden' && !el.disabled && el.getClientRects().length > 0);
-}
+const { hasInvalid, setInvalid } = useFieldValidity();
 onMounted(() => {
   unregister = register();
   /*
@@ -44,7 +42,7 @@ onMounted(() => {
    * снимает выделение только в начале жеста (_triggerDragStart), после броска — нет; проверено в
    * Chromium/Firefox/WebKit: ввод сразу после броска доходит до поля целиком (task-8-report.md).
    */
-  void nextTick(() => firstField()?.focus());
+  void nextTick(() => firstField(formEl.value)?.focus());
 });
 onUnmounted(() => unregister?.());
 
@@ -60,7 +58,7 @@ function stopEscapeBubbling(e: KeyboardEvent): void {
 }
 
 async function submit(): Promise<void> {
-  if (!complete.value || saving.value) return;
+  if (!complete.value || saving.value || hasInvalid.value) return;
   saving.value = true;
   error.value = null;
   try {
@@ -90,7 +88,7 @@ async function submit(): Promise<void> {
       <form ref="formEl" @submit.prevent>
         <div class="fields-grid">
           <template v-for="id in missing" :key="id">
-            <FieldInput v-if="fieldInfo(board, id)" :def="fieldInfo(board, id)!" :value="values[id] ?? undefined" @update:value="(v) => (values = { ...values, [id]: v })" />
+            <FieldInput v-if="fieldInfo(board, id)" :def="fieldInfo(board, id)!" :value="values[id] ?? undefined" @update:value="(v) => (values = { ...values, [id]: v })" @invalid="(bad) => setInvalid(id, bad)" />
           </template>
         </div>
         <p v-if="error" class="form-error" role="alert">{{ error }}</p>
@@ -103,7 +101,7 @@ async function submit(): Promise<void> {
           `flex-direction: row-reverse` (panel.css) keeps Cancel visually on the left, unchanged.
         -->
         <footer class="modal-foot">
-          <TNButton type="action" :disabled="!complete || saving" @click="submit">Перенести</TNButton>
+          <TNButton type="action" :disabled="!complete || saving || hasInvalid" @click="submit">Перенести</TNButton>
           <TNButton type="outline" @click="emit('cancel')">Отмена</TNButton>
         </footer>
       </form>

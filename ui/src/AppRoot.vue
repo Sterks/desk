@@ -6,8 +6,10 @@
 import App from './App.vue';
 import ErrorBoundary from './ui/ErrorBoundary.vue';
 
+// Не reload(): падение, вызванное текущим URL (?task=…, фильтр), повторялось бы при каждой
+// перезагрузке. Путь без query даёт чистую попытку — так же было в React-версии.
 function reloadBoard(): void {
-  window.location.reload();
+  window.location.assign(window.location.pathname);
 }
 </script>
 

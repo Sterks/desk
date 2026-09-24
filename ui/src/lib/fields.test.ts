@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFull } from '../api/types';
-import { buildUpdate, compactFields, defaultsFor, diffFields, fieldInfo, isDirty, isUnreadable, mergeFresh, parseNumberInput, rebaseDraft, toDraft, undeclaredFields } from './fields';
+import { buildUpdate, compactFields, defaultsFor, diffFields, fieldInfo, isDirty, isUnreadable, mergeFresh, parseNumberInput, readNumberInput, rebaseDraft, toDraft, undeclaredFields } from './fields';
 import { boardInfo, taskItem } from './test-fixtures';
 
 const task: TaskFull = {
@@ -82,6 +82,25 @@ describe('parseNumberInput', () => {
     ['5.5', 5.5],
     ['-2', -2],
   ])('%j → %j', (text, expected) => expect(parseNumberInput(text)).toBe(expected));
+});
+
+describe('readNumberInput', () => {
+  it.each([
+    ['', null],
+    ['   ', null],
+    ['5', 5],
+    ['-5', -5],
+    ['1.5', 1.5],
+    [' 2 ', 2],
+    ['.5', 0.5],
+    ['1.', 1],
+    ['2e3', 2000],
+  ])('%j — валидно, значение %j', (text, value) => expect(readNumberInput(text)).toEqual({ ok: true, value }));
+
+  // Каждый из этих случаев раньше доходил до parseNumberInput → NaN → JSON null → поле стиралось.
+  it.each(['1,5', '-', '5x', 'x', 'NaN', 'Infinity', '1e999', '0x10', '1.2.3'])('%j — невалидно, значения нет', (text) =>
+    expect(readNumberInput(text)).toEqual({ ok: false }),
+  );
 });
 
 describe('isUnreadable', () => {

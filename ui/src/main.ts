@@ -10,6 +10,10 @@ import './styles/panel.css';
 import { createApp } from 'vue';
 import TNLifeUIKit from '@life_uikit/uikit';
 import AppRoot from './AppRoot.vue';
+import { initTheme } from './composables/useTheme';
+
+// До монтирования: тема нужна уже экрану загрузки, ошибки и аварийному экрану, не только доске.
+initTheme();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('#root не найден в index.html');

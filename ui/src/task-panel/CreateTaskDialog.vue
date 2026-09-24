@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 import TNInput from '@life_uikit/uikit/components/input/input.vue';
 import TNFormItem from '@life_uikit/uikit/components/form-item/form-item.vue';
 import TNButton from '@life_uikit/uikit/components/button/button.vue';
@@ -8,6 +8,8 @@ import { api, errorMessage } from '../api/client';
 import type { BoardInfo, TaskFull } from '../api/types';
 import { ASSIGNEE_FIELD, compactFields, defaultsFor, type Draft } from '../lib/fields';
 import { useDialogStack } from '../composables/useDialogStack';
+import { useFieldValidity } from '../composables/useFieldValidity';
+import { firstField } from '../lib/focus';
 import FieldInput from './FieldInput.vue';
 
 const props = defineProps<{ board: BoardInfo }>();
@@ -20,10 +22,17 @@ const assignee = ref('');
 const fields = ref<Draft>(defaultsFor(props.board));
 const error = ref<string | null>(null);
 const saving = ref(false);
+const { hasInvalid, setInvalid } = useFieldValidity();
+const formEl = ref<HTMLFormElement | null>(null);
 
 const { register } = useDialogStack();
 let unregister: (() => void) | undefined;
-onMounted(() => { unregister = register(); });
+onMounted(() => {
+  unregister = register();
+  // Фокус в первое поле (title) при открытии — тот же приём и то же обоснование порядка nextTick,
+  // что в RequiresDialog.vue: TNPopup фокусирует свой контейнер раньше, наш фокус ложится поверх.
+  void nextTick(() => firstField(formEl.value)?.focus());
+});
 onUnmounted(() => unregister?.());
 
 // TNPopup's own `@keydown.esc.exact="handleEscPress"` (popup.vue) only emits `close` — it never
@@ -41,7 +50,7 @@ function stopEscapeBubbling(e: KeyboardEvent): void {
 }
 
 async function submit(): Promise<void> {
-  if (saving.value || title.value.trim() === '') return;
+  if (saving.value || title.value.trim() === '' || hasInvalid.value) return;
   saving.value = true;
   error.value = null;
   try {
@@ -71,7 +80,7 @@ async function submit(): Promise<void> {
         обрабатывает вовсе (только гасит нативную отправку/перезагрузку), а создание задачи запускает
         явный `@click="submit"` только на кнопке "Создать".
       -->
-      <form @submit.prevent>
+      <form ref="formEl" @submit.prevent>
         <div class="fields-grid">
           <div class="field-row">
             <TNInput label="title" required v-model="title" />
@@ -85,7 +94,7 @@ async function submit(): Promise<void> {
             </TNFormItem>
           </div>
           <FieldInput :def="ASSIGNEE_FIELD" :value="assignee || undefined" @update:value="(v) => (assignee = typeof v === 'string' ? v : '')" />
-          <FieldInput v-for="f in board.fields" :key="f.id" :def="f" :value="fields[f.id] ?? undefined" @update:value="(v) => (fields = { ...fields, [f.id]: v })" />
+          <FieldInput v-for="f in board.fields" :key="f.id" :def="f" :value="fields[f.id] ?? undefined" @update:value="(v) => (fields = { ...fields, [f.id]: v })" @invalid="(bad) => setInvalid(f.id, bad)" />
           <div class="field-row">
             <!--
               TNTextarea (vendor) generates its own internal id and wires it to TextareaAutosize,
@@ -118,7 +127,7 @@ async function submit(): Promise<void> {
           on-screen layout exactly as before.
         -->
         <footer class="modal-foot">
-          <TNButton type="action" :disabled="saving || title.trim() === ''" @click="submit">Создать</TNButton>
+          <TNButton type="action" :disabled="saving || title.trim() === '' || hasInvalid" @click="submit">Создать</TNButton>
           <TNButton type="outline" @click="emit('close')">Отмена</TNButton>
         </footer>
       </form>

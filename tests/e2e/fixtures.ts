@@ -122,3 +122,40 @@ export async function dragTo(page: Page, source: Locator, target: Locator): Prom
   await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 20 });
   await page.mouse.up();
 }
+
+const BOARD_FILE = join(PROJECT_ROOT, '.desk', 'board.yaml');
+
+type ServerField = { id: string; values?: string[] | null };
+interface BoardFieldsResponse {
+  ok: boolean;
+  data?: { fields?: ServerField[] };
+}
+
+/** Поля доски, как их сейчас отдаёт сервер (GET /api/board). */
+async function serverFields(): Promise<ServerField[]> {
+  const res = await fetch(`${E2E_ORIGIN}/api/board`, { headers: { origin: E2E_ORIGIN } });
+  const body = (await res.json()) as BoardFieldsResponse;
+  return body.data?.fields ?? [];
+}
+
+export interface BoardBackup {
+  content: string;
+  fields: string;
+}
+
+/**
+ * Заменить board.yaml тестового проекта и дождаться, пока сервер перечитает его (watch.ts →
+ * board_changed): `isLoaded` проверяет поля, которые вернул GET /api/board. Прежнее содержимое нужно
+ * вернуть через restoreBoard (в afterEach/afterAll), иначе следующий тест увидит чужую схему.
+ */
+export async function replaceBoard(content: string, isLoaded: (fields: ServerField[]) => boolean): Promise<BoardBackup> {
+  const backup = { content: await readFile(BOARD_FILE, 'utf8'), fields: JSON.stringify(await serverFields()) };
+  await writeFile(BOARD_FILE, content);
+  await expect.poll(async () => isLoaded(await serverFields()), { timeout: 10_000 }).toBe(true);
+  return backup;
+}
+
+export async function restoreBoard(backup: BoardBackup): Promise<void> {
+  await writeFile(BOARD_FILE, backup.content);
+  await expect.poll(async () => JSON.stringify(await serverFields()), { timeout: 10_000 }).toBe(backup.fields);
+}

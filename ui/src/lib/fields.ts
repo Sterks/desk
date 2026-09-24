@@ -64,6 +64,27 @@ export function parseNumberInput(text: string): number | null {
   return text === '' ? null : Number(text);
 }
 
+export type NumberInputResult = { ok: true; value: number | null } | { ok: false };
+
+/** Десятичное число в записи, которую принимает нативный `<input type="number">`: `-5`, `1.5`, `.5`, `2e3`. */
+const DECIMAL_NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/**
+ * Текст числового поля (TNInput — это `type="text"`, браузер ничего не отсеивает) → значение для
+ * черновика. Пустая строка (или только пробелы) — `{ ok: true, value: null }`, то есть «очистить поле».
+ * Всё, что не является конечным десятичным числом (`1,5`, `-`, `5x`, `Infinity`), — `{ ok: false }`:
+ * такой текст НЕЛЬЗЯ отправлять ни числом, ни `null` — `parseNumberInput` дал бы `NaN`, а `NaN` в JSON
+ * превращается в `null` и молча стёр бы значение при сохранении. Сама `parseNumberInput` не меняется
+ * (global constraint), эта функция только решает, можно ли ей доверить текст.
+ */
+export function readNumberInput(text: string): NumberInputResult {
+  const trimmed = text.trim();
+  if (trimmed === '') return { ok: true, value: null };
+  if (!DECIMAL_NUMBER.test(trimmed)) return { ok: false };
+  const value = parseNumberInput(trimmed);
+  return value !== null && Number.isFinite(value) ? { ok: true, value } : { ok: false };
+}
+
 export interface PanelState {
   task: TaskFull;
   draft: TaskDraft;

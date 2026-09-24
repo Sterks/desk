@@ -13,3 +13,19 @@ export function priorityTone(board: BoardInfo, value: unknown): PriorityTone | n
   if (values.length > 2 && index === values.length - 1) return 'low';
   return 'normal';
 }
+
+const TONE_CLASS: Record<PriorityTone, string> = {
+  critical: 'priority-p0',
+  high: 'priority-p1',
+  normal: 'priority-p2',
+  low: 'priority-p3',
+};
+
+/**
+ * CSS-класс пилюли по ПОЗИЦИИ значения в `values` поля priority (spec §6): первое значение →
+ * `.priority-p0`, как бы оно ни называлось, — через тот же priorityTone. Значения вне списка — null,
+ * пилюля остаётся без цветового акцента.
+ */
+export function priorityClass(tone: PriorityTone | null): string | null {
+  return tone === null ? null : TONE_CLASS[tone];
+}

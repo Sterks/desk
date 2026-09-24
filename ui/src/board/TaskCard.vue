@@ -2,12 +2,13 @@
 import { computed } from 'vue';
 import type { BoardInfo, TaskItem } from '../api/types';
 import { agentColor } from '../lib/agentColor';
-import { priorityTone } from '../lib/priority';
+import { priorityClass, priorityTone } from '../lib/priority';
 
 const props = defineProps<{ task: TaskItem; board: BoardInfo }>();
 const emit = defineEmits<{ open: [id: string] }>();
 
-const tone = computed(() => priorityTone(props.board, props.task.fields.priority));
+// Цвет пилюли — по позиции значения в values поля priority из board.yaml, не по его имени (spec §6).
+const toneClass = computed(() => priorityClass(priorityTone(props.board, props.task.fields.priority)));
 const priority = computed(() => (typeof props.task.fields.priority === 'string' ? props.task.fields.priority : null));
 const showAgent = computed(() => props.task.agent && props.task.agent !== props.task.assignee);
 const time = computed(() =>
@@ -34,7 +35,7 @@ const time = computed(() =>
     :data-invalid="task.invalid || undefined"
   >
     <header class="card-head">
-      <span v-if="priority" class="priority-pill" :class="`priority-${priority}`">{{ priority }}</span>
+      <span v-if="priority" class="priority-pill" :class="toneClass">{{ priority }}</span>
       <time class="card-time" :datetime="task.created_at">{{ time }}</time>
     </header>
     <button type="button" class="card-title" @click="emit('open', task.id)">{{ task.title }}</button>

@@ -11,8 +11,6 @@ onErrorCaptured((error) => {
   message.value = errorMessage(error);
   return false; // не даём ошибке всплыть дальше — этот компонент её обработал
 });
-
-defineExpose({ reset: () => { message.value = null; } });
 </script>
 
 <template>

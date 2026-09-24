@@ -24,7 +24,6 @@
   --button-primary-bg: var(--background-accent-enabled);
 
   --tag-bg: var(--background-tertiary-enabled);
-  --tag-fg: var(--text-muted);
 
   --wip-full: var(--tone-warning);
   --wip-over: color-mix(in srgb, var(--content-system-negative) 60%, var(--text));
@@ -51,7 +50,6 @@
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
-  --space-6: 2rem;
 
   --radius-card: 2px;
   --radius-control: 4px;

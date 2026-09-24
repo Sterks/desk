@@ -13,8 +13,10 @@ import {
   type PanelState,
 } from '../lib/fields';
 import { formatTime } from '../lib/format';
+import { createLatestGuard } from '../lib/latest';
 import { allowedTargets } from '../lib/transitions';
 import { dialogsOpen } from '../composables/useDialogStack';
+import { useFieldValidity } from '../composables/useFieldValidity';
 import Markdown from '../ui/Markdown.vue';
 import FieldInput from './FieldInput.vue';
 
@@ -27,10 +29,26 @@ const loadError = ref<string | null>(null);
 const editingDescription = ref(false);
 const note = ref('');
 const saving = ref(false);
+const { hasInvalid, setInvalid } = useFieldValidity();
+
+/*
+ * Инвариант: state.task меняет только ответ ПОСЛЕДНЕГО начатого запроса. Загрузки перекрываются
+ * (несколько SSE-событий подряд, загрузка во время сохранения), и ответы приходят в любом порядке;
+ * без проверки поздний ответ старого GET перезаписал бы свежие данные, а mergeFresh перебазировал бы
+ * черновик на устаревшую задачу — правка, совпавшая со старым значением, выпала бы из diff
+ * (buildUpdate) и молча не сохранилась бы. В React это делал флаг `alive` в cleanup useEffect.
+ * Запись (run) тоже объявляет устаревшими начатые до неё загрузки, а если такие были — загружает
+ * задачу заново: неизвестно, прочитал их GET состояние до записи или после.
+ */
+const loads = createLatestGuard();
+let loadsInFlight = 0;
 
 async function load(): Promise<void> {
+  const isLatest = loads.begin();
+  loadsInFlight += 1;
   try {
     const next = await api.task(props.taskId);
+    if (!isLatest()) return;
     loadError.value = null;
     if (isUnreadable(next)) {
       unreadable.value = next;
@@ -40,7 +58,9 @@ async function load(): Promise<void> {
     unreadable.value = null;
     state.value = mergeFresh(state.value, next);
   } catch (e) {
-    loadError.value = errorMessage(e);
+    if (isLatest()) loadError.value = errorMessage(e);
+  } finally {
+    loadsInFlight -= 1;
   }
 }
 
@@ -68,7 +88,10 @@ async function run(action: () => Promise<TaskFull>): Promise<void> {
   saving.value = true;
   try {
     const updated = await action();
+    const raced = loadsInFlight > 0;
+    loads.invalidate();
     state.value = mergeFresh(state.value, updated);
+    if (raced) void load();
   } catch (e) {
     emit('error', errorMessage(e));
   } finally {
@@ -78,7 +101,7 @@ async function run(action: () => Promise<TaskFull>): Promise<void> {
 
 function save(): void {
   const current = state.value;
-  if (!current) return;
+  if (!current || hasInvalid.value) return;
   const update = buildUpdate(current.task, current.draft);
   void run(async () => {
     const updated = await api.update(current.task.id, update);
@@ -165,7 +188,7 @@ const stale = computed(() => (state.value ? undeclaredFields(props.board, state.
           <h3>Поля</h3>
           <div class="fields-grid">
             <FieldInput :def="ASSIGNEE_FIELD" :value="state.draft.assignee || undefined" @update:value="(v) => setDraft({ assignee: typeof v === 'string' ? v : '' })" />
-            <FieldInput v-for="f in board.fields" :key="f.id" :def="f" :value="state.draft.fields[f.id] ?? undefined" @update:value="(v) => setField(f.id, v)" />
+            <FieldInput v-for="f in board.fields" :key="f.id" :def="f" :value="state.draft.fields[f.id] ?? undefined" @update:value="(v) => setField(f.id, v)" @invalid="(bad) => setInvalid(f.id, bad)" />
             <div v-for="key in stale" :key="key" class="stale-field">
               <span class="field-label">{{ key }}</span>
               <div class="stale-value">
@@ -209,7 +232,7 @@ const stale = computed(() => (state.value ? undeclaredFields(props.board, state.
         </section>
       </div>
       <footer class="panel-foot">
-        <button type="button" class="button button-primary" :disabled="saving || !dirty" @click="save">Сохранить</button>
+        <button type="button" class="button button-primary" :disabled="saving || !dirty || hasInvalid" @click="save">Сохранить</button>
       </footer>
     </template>
   </aside>

@@ -1,22 +1,56 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue';
+import { computed, onUnmounted, ref, useId, watch } from 'vue';
 import TNInput from '@life_uikit/uikit/components/input/input.vue';
-import TNTextarea from '@life_uikit/uikit/components/textarea/textarea.vue';
 import TNFormItem from '@life_uikit/uikit/components/form-item/form-item.vue';
 import type { FieldInfo, FieldValue } from '../api/types';
-import { parseNumberInput } from '../lib/fields';
+import { readNumberInput } from '../lib/fields';
 
 const props = defineProps<{ def: FieldInfo; value: FieldValue | undefined | null }>();
-const emit = defineEmits<{ 'update:value': [FieldValue | null] }>();
+const emit = defineEmits<{
+  'update:value': [FieldValue | null];
+  /** Текст поля сейчас нельзя сохранить (только number): форма должна заблокировать сохранение. */
+  invalid: [boolean];
+}>();
 
 const textValue = computed(() => (typeof props.value === 'string' ? props.value : ''));
-const numberValue = computed(() => (typeof props.value === 'number' ? props.value : null));
 const boolValue = computed(() => props.value === true);
 const listValue = computed(() => (Array.isArray(props.value) ? props.value : []));
 const orNull = (text: string): string | null => (text === '' ? null : text);
 // useId: окно requires открывается поверх панели с теми же полями — id не должны совпадать.
 const selectId = `field-${props.def.id}-${useId()}`;
 const checkboxId = `field-${props.def.id}-${useId()}`;
+const textareaId = `field-${props.def.id}-${useId()}`;
+
+/*
+ * number: TNInput — это `<input type="text">`, браузер не отсеивает `1,5`, `-` или `5x`. Поэтому
+ * сырой текст живёт здесь, а наружу уходит только то, что readNumberInput признал: конечное число
+ * или `null` для пустой строки («очистить поле»). Невалидный текст НЕ эмитится вовсе — раньше он
+ * становился NaN, NaN сериализовался в JSON как null, и сохранение молча стирало значение. Вместо
+ * этого поле показывает ошибку, а форма через событие `invalid` блокирует сохранение.
+ */
+const numberToText = (v: FieldValue | undefined | null): string => (typeof v === 'number' ? String(v) : '');
+const numberText = ref(numberToText(props.value));
+const numberInvalid = computed(() => props.def.type === 'number' && !readNumberInput(numberText.value).ok);
+// Новое значение пришло снаружи (сохранение, свежая версия задачи): текст синхронизируется, если
+// он валиден и означает другое число. Невалидный текст человека не затираем — ошибка остаётся видна.
+watch(
+  () => props.value,
+  (v) => {
+    const current = readNumberInput(numberText.value);
+    const incoming = typeof v === 'number' ? v : null;
+    if (current.ok && current.value !== incoming) numberText.value = numberToText(v);
+  },
+);
+watch(numberInvalid, (isInvalid) => emit('invalid', isInvalid));
+onUnmounted(() => {
+  if (numberInvalid.value) emit('invalid', false);
+});
+
+function onNumberInput(text: string): void {
+  numberText.value = text;
+  const parsed = readNumberInput(text);
+  if (parsed.ok) emit('update:value', parsed.value);
+}
 
 function toggleMultiValue(v: string, checked: boolean): void {
   const next = checked ? [...listValue.value, v] : listValue.value.filter((x) => x !== v);
@@ -25,6 +59,9 @@ function toggleMultiValue(v: string, checked: boolean): void {
 </script>
 
 <template>
+  <!-- :label="def.id" ниже TNFormItem/TNInput рендерит через v-html. Безопасно только потому, что id
+       поля — не пользовательский текст: board-schema.ts (src/core) пропускает лишь ^[a-z][a-z0-9_]*$.
+       Ослабите это правило — замените label на слот #label с текстовой интерполяцией. -->
   <div class="field-row">
     <!-- enum — нативный <select> внутри TNFormItem (тот же лейбл/описание/звёздочка, что у TNInput),
          а не TNSelectV2: у TNSelectV2 триггер — <div> с click-обработчиком, без role, tabindex и
@@ -99,17 +136,30 @@ function toggleMultiValue(v: string, checked: boolean): void {
       :description="def.guide ?? undefined"
       :required="def.required"
       numeric-keyboard="decimal"
-      :model-value="numberValue === null ? '' : String(numberValue)"
-      @update:model-value="(v) => emit('update:value', parseNumberInput(v))"
+      :error="numberInvalid ? 'Не число. Дробную часть отделяйте точкой: 1.5' : undefined"
+      :model-value="numberText"
+      @update:model-value="onNumberInput"
     />
-    <TNTextarea
+    <!-- text — нативный `<textarea>` внутри TNFormItem с item-id, а не TNTextarea: тот генерирует
+         свой id, но не передаёт его в TNFormItem как item-id, и `<label>` остаётся без `for` (поле без
+         доступного имени). Та же замена, что для description в CreateTaskDialog.vue: тот же
+         `<label for class="tn-form-item__label">` + `<textarea id class="tn-textarea__textarea">`, только
+         label рисует TNFormItem — чтобы у поля остались guide и звёздочка required, как у enum/bool выше. -->
+    <TNFormItem
       v-else-if="def.type === 'text'"
       :label="def.id"
       :description="def.guide ?? undefined"
       :required="def.required"
-      :model-value="textValue"
-      @update:model-value="(v) => emit('update:value', orNull(v))"
-    />
+      :item-id="textareaId"
+    >
+      <textarea
+        :id="textareaId"
+        class="tn-textarea__textarea"
+        rows="4"
+        :value="textValue"
+        @input="emit('update:value', orNull(($event.target as HTMLTextAreaElement).value))"
+      ></textarea>
+    </TNFormItem>
     <TNInput
       v-else
       :label="def.id"
