@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBoardHolder } from '../../src/core/board-holder.js';
+import { DeskError } from '../../src/core/errors.js';
 import { callTool, type ToolContext } from '../../src/mcp/tools.js';
 import { catchErrorAsync } from '../helpers/errors.js';
 import { fixedClock, makeEmptyDir, makeProject } from '../helpers/project.js';
@@ -82,5 +83,24 @@ describe('callTool', () => {
   it('без .desk — INVALID_BOARD', async () => {
     const empty: ToolContext = { holder: await createBoardHolder(await makeEmptyDir(), {}) };
     expect((await catchErrorAsync(() => callTool(empty, 'get_board', {}))).code).toBe('INVALID_BOARD');
+  });
+
+  it('без .desk — list_projects/get_project возвращают INVALID_BOARD, а не пустой/дефолтный успех', async () => {
+    const empty: ToolContext = { holder: await createBoardHolder(await makeEmptyDir(), {}) };
+    expect((await catchErrorAsync(() => callTool(empty, 'list_projects', {}))).code).toBe('INVALID_BOARD');
+    expect((await catchErrorAsync(() => callTool(empty, 'get_project', {}))).code).toBe('INVALID_BOARD');
+  });
+
+  it('workspaceError (сломанный project.yaml): list_projects/get_project — INVALID_BOARD, get_board работает', async () => {
+    const root = await makeProject();
+    const broken: ToolContext = {
+      holder: await createBoardHolder(root, {}),
+      clock: fixedClock(),
+      workspaceError: new DeskError('INVALID_BOARD', 'project.yaml: tenant_id: обязательное поле'),
+    };
+    expect((await catchErrorAsync(() => callTool(broken, 'list_projects', {}))).message).toContain('project.yaml');
+    expect((await catchErrorAsync(() => callTool(broken, 'get_project', {}))).message).toContain('project.yaml');
+    const board = await callTool(broken, 'get_board', {});
+    expect(board).toMatchObject({ guide: 'Общие правила.' });
   });
 });

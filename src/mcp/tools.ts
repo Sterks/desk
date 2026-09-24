@@ -4,7 +4,7 @@ import { DeskError } from '../core/errors.js';
 import { presentBoard, presentLoaded, presentTask, presentTaskList } from '../core/present.js';
 import { addNote, createTask, getTask, loadAll, moveTask, readableTasks, updateTask } from '../core/task-store.js';
 import type { Clock } from '../core/types.js';
-import type { WorkspaceContext } from '../core/workspace.js';
+import { requireWorkspace, type WorkspaceContext } from '../core/workspace.js';
 
 export const DEFAULT_LIMIT = 50;
 export const MAX_LIMIT = 200;
@@ -13,6 +13,8 @@ export interface ToolContext {
   holder: BoardHolder;
   clock?: Clock;
   workspace?: WorkspaceContext;
+  /** Запомненная ошибка загрузки project.yaml (см. requireWorkspace в core/workspace.ts). */
+  workspaceError?: DeskError;
 }
 
 const actor = z.string({ required_error: 'передай имя агента' });
@@ -39,10 +41,7 @@ const argSchemas = {
     .object({ actor, title: z.string(), description: z.string().optional(), column: z.string().optional(), fields })
     .extend(context)
     .strict(),
-  update_task: z
-    .object({ actor, id, title: z.string().optional(), description: z.string().optional(), fields })
-    .extend(context)
-    .strict(),
+  update_task: z.object({ actor, id, title: z.string().optional(), description: z.string().optional(), fields }).extend(context).strict(),
   move_task: z.object({ actor, id, to: z.string(), fields, ...context }).strict(),
   add_note: z.object({ actor, id, text: z.string(), ...context }).strict(),
 };
@@ -53,8 +52,10 @@ export const TOOL_NAMES = Object.keys(argSchemas) as ToolName[];
 function assertContext(ctx: ToolContext, args: unknown): void {
   if (!ctx.workspace || typeof args !== 'object' || args === null) return;
   const value = args as { tenant_id?: string; project_id?: string };
-  if (value.tenant_id && value.tenant_id !== ctx.workspace.tenantId) throw new DeskError('BAD_REQUEST', `Неизвестный tenant context: ${value.tenant_id}`);
-  if (value.project_id && value.project_id !== ctx.workspace.projectId) throw new DeskError('BAD_REQUEST', `Неизвестный project context: ${value.project_id}`);
+  if (value.tenant_id && value.tenant_id !== ctx.workspace.tenantId)
+    throw new DeskError('BAD_REQUEST', `Неизвестный tenant context: ${value.tenant_id}`);
+  if (value.project_id && value.project_id !== ctx.workspace.projectId)
+    throw new DeskError('BAD_REQUEST', `Неизвестный project context: ${value.project_id}`);
 }
 
 function parseArgs<N extends ToolName>(name: N, raw: unknown): z.infer<(typeof argSchemas)[N]> {
@@ -87,14 +88,29 @@ export async function callTool(ctx: ToolContext, name: string, raw: unknown): Pr
     }
     case 'list_projects': {
       parseArgs(name, raw);
-      if (!ctx.workspace) return { projects: [] };
-      return { projects: [{ tenant_id: ctx.workspace.tenantId, project_id: ctx.workspace.projectId, name: ctx.workspace.project.name, legacy: ctx.workspace.project.legacy }] };
+      const workspace = requireWorkspace(ctx.workspace, ctx.workspaceError);
+      return {
+        projects: [
+          {
+            tenant_id: workspace.tenantId,
+            project_id: workspace.projectId,
+            name: workspace.project.name,
+            legacy: workspace.project.legacy,
+          },
+        ],
+      };
     }
     case 'get_project': {
       const args = parseArgs(name, raw);
       assertContext(ctx, args);
-      if (!ctx.workspace) throw new DeskError('INVALID_BOARD', 'Project context ещё не загружен');
-      return { tenant_id: ctx.workspace.tenantId, project_id: ctx.workspace.projectId, name: ctx.workspace.project.name, guide: ctx.workspace.project.guide ?? null, legacy: ctx.workspace.project.legacy };
+      const workspace = requireWorkspace(ctx.workspace, ctx.workspaceError);
+      return {
+        tenant_id: workspace.tenantId,
+        project_id: workspace.projectId,
+        name: workspace.project.name,
+        guide: workspace.project.guide ?? null,
+        legacy: workspace.project.legacy,
+      };
     }
     case 'list_tasks': {
       const args = parseArgs(name, raw);
