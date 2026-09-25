@@ -1,6 +1,7 @@
 .board {
   display: flex;
   align-items: flex-start;
+  justify-content: center;
   gap: var(--space-4);
   min-height: calc(100vh - 5rem);
   padding: var(--space-4);
@@ -132,6 +133,44 @@
   gap: var(--space-2);
 }
 
+.card-head-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.card-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.card-copy-id {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.card-copy-id:hover {
+  color: var(--text);
+  background: var(--background-tertiary-enabled);
+}
+
+.card-copy-id:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.card-copy-id--done {
+  color: var(--content-system-positive);
+}
 
 .card-time {
   font-family: var(--font-mono);
