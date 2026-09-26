@@ -21,6 +21,14 @@ async function copyId(event: MouseEvent) {
 // Цвет пилюли — по позиции значения в values поля priority из board.yaml, не по его имени (spec §6).
 const toneClass = computed(() => priorityClass(priorityTone(props.board, props.task.fields.priority)));
 const priority = computed(() => (typeof props.task.fields.priority === 'string' ? props.task.fields.priority : null));
+// Поле parent (task_ref) — соглашение проекта для подзадач, не встроенная в board.yaml сущность:
+// если оно есть, карточка визуально отличается от корневых (см. .card--child) и ссылается на родителя.
+const parentId = computed(() => (typeof props.task.fields.parent === 'string' ? props.task.fields.parent : null));
+
+function openParent(event: MouseEvent): void {
+  event.stopPropagation();
+  if (parentId.value) emit('open', parentId.value);
+}
 const showAgent = computed(() => props.task.agent && props.task.agent !== props.task.assignee);
 const time = computed(() =>
   new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(
@@ -38,6 +46,7 @@ const time = computed(() =>
        axe (aria-allowed-role) не разрешает role="group" на <article>; так же было в React-версии. -->
   <div
     class="card"
+    :class="{ 'card--child': parentId }"
     role="group"
     aria-roledescription="карточка задачи"
     :aria-label="`${task.id}: ${task.title}`"
@@ -68,6 +77,12 @@ const time = computed(() =>
       </span>
       <time class="card-time" :datetime="task.created_at">{{ time }}</time>
     </header>
+    <button v-if="parentId" type="button" class="card-parent" :title="`Родительская задача: ${parentId}`" @click="openParent">
+      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+        <path d="M4 2v6a2 2 0 0 0 2 2h6M9 7l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      {{ parentId }}
+    </button>
     <button type="button" class="card-title" @click="emit('open', task.id)">{{ task.title }}</button>
     <span v-if="showAgent" class="card-agent" title="Тип сабагента">{{ task.agent }}</span>
     <span v-if="task.invalid" class="card-flag" :title="task.errors.join('\n')">ошибка схемы</span>

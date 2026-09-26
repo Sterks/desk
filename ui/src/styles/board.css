@@ -126,6 +126,41 @@
   border-color: var(--invalid-border);
 }
 
+/* Подзадача (fields.parent заполнено, соглашение проекта — не встроенная сущность board.yaml):
+   отступ внутри колонки + акцентная полоса слева читаются как «вложено под родителя», приглушённый
+   заголовок держит визуальную иерархию, не трогая раскладку колонки (карточка остаётся в общем списке). */
+.card--child {
+  margin-left: var(--space-4);
+  border-left: 2px solid var(--focus-ring);
+  box-shadow: none;
+}
+
+.card--child .card-title {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.card-parent {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.card-parent:hover {
+  color: var(--focus-ring);
+}
+
+.card-parent:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .card-head {
   display: flex;
   align-items: center;
