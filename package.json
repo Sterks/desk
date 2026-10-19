@@ -10,7 +10,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "npm run build:server && npm run build:ui",
@@ -24,6 +24,8 @@
     "test:tui": "cd tui && go vet ./... && go test -race -cover ./...",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
+    "check:package": "node scripts/check-package.mjs",
+    "verify:release": "npm run typecheck && npm test && npm run test:tui && npm run test:e2e -- --project=chromium --project=webkit && npm run check:package",
     "test:e2e:headed": "npm run build && playwright test --headed"
   },
   "dependencies": {

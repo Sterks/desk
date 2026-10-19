@@ -4,6 +4,8 @@
 
 ## Установка
 
+Нужен Node.js ≥ 22.
+
 ```bash
 npm install
 npm run build
@@ -56,7 +58,7 @@ desk hook agent-start|agent-attach|agent-end  обработчики хуков 
 
 `desk tui` поднимает HTTP API на свободном порту и запускает Go-клиент `desk-tui`. Клиент ходит в тот же API, что и веб-UI, поэтому правила переходов, WIP-лимиты и история работают одинаково. Изменения из других источников (агенты, веб-UI, правка файлов) приходят по SSE.
 
-Сборка (нужен Go ≥ 1.25): `npm run build:tui` кладёт бинарь в `tui/bin/desk-tui`. Порядок поиска: `DESK_TUI_BIN` → `tui/bin/desk-tui` → `PATH`.
+Сборка (нужен Go ≥ 1.25): `npm run build:tui` кладёт бинарь в `tui/bin/desk-tui`. Порядок поиска: `DESK_TUI_BIN` → `tui/bin/desk-tui` → `PATH`. npm-архив содержит CLI и веб-UI, но не содержит платформенный Go-бинарь: после глобальной установки укажите путь к отдельно собранному бинарю через `DESK_TUI_BIN` или поместите его в `PATH`.
 
 | Клавиши | Действие |
 |---|---|
@@ -96,12 +98,18 @@ desk hooks install     # или сразу: desk init --claude-md --hooks
 
 Связь «вызов → карточка» хранится в `.desk/.agent-runs.json` (последние 500 запусков, файл в `.gitignore`). Хуки никогда не блокируют Claude Code: при любой проблеме они пишут сообщение в stderr и завершаются с кодом 0. Команда `desk` должна быть доступна в `PATH` (`npm i -g .`).
 
-Перед релизом проверьте:
+## Локальный npm-релиз
+
+Пакет запускает доску только на `127.0.0.1`; доступ извне не предусмотрен. Данные находятся в `.desk/` рабочего проекта. Перед обновлением сохраните копию этого каталога и проверьте проект командой `desk validate`.
+
+Перед упаковкой выполните полный релизный прогон (Node.js ≥ 22, Go ≥ 1.25, установленные браузеры Playwright):
 
 ```bash
-npm run typecheck
-npm test
-npm run build
-npm run test:e2e
-desk validate
+npm ci
+npx playwright install chromium firefox webkit
+npm run verify:release
+npm pack
+npm i -g ./desk-0.1.0.tgz
 ```
+
+`verify:release` проверяет типы, JS/TS и Go тесты, веб-сценарии в Chromium и WebKit и состав npm-архива. CI дополнительно запускает Firefox на macOS 26: на macOS 27 Playwright Firefox не открывает профиль, а пиксельные эталоны записаны на macOS 27, поэтому в Firefox проверяются сценарии поведения без снимков. Архив создавайте после сборки: в репозитории включено `ignore-scripts=true`, поэтому `npm pack` сам сборку не запускает. После установки из целевого проекта выполните `desk validate`, затем `desk ui --open`.
