@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { statSync } from 'node:fs';
 import { rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
-import { DESK_DIR, TASK_FILE_RE, deskDir, tasksDir } from './paths.js';
+import { DESK_DIR, TASK_FILE_RE, boardPath, deskDir, tasksDir } from './paths.js';
 
 export type DeskEvent =
   | { type: 'task_changed'; id: string }
@@ -62,6 +63,15 @@ export function watchDesk(
   // миллисекунде, что и старт вотчера, тогда часто ложно не отфильтровывается
   // (mtimeMs с дробной частью оказывается больше усечённого Date.now()).
   const startedAt = performance.timeOrigin + performance.now();
+  // Сравнение с часами процесса недостаточно, когда mtime файла чуть впереди
+  // вычисленного startedAt (например, на GitHub macOS runner). Запоминаем mtime
+  // уже существующей доски, чтобы её стартовый replay не выглядел новой правкой.
+  let initialBoardMtimeMs: number | undefined;
+  try {
+    initialBoardMtimeMs = statSync(boardPath(root)).mtimeMs;
+  } catch {
+    // Доска может отсутствовать или быть недоступной; watcher всё равно стартует.
+  }
   let lastReplayAt = Number.NEGATIVE_INFINITY;
   const watcher = chokidar.watch(deskDir(root), {
     ignoreInitial: true,
@@ -73,15 +83,17 @@ export function watchDesk(
     (kind: 'add' | 'change' | 'unlink') =>
     (path: string, stats?: { mtimeMs: number }): void => {
       if (probes.has(path)) return;
+      const name = basename(path);
+      const parent = basename(dirname(path));
+      const isBoard = name === 'board.yaml' && parent === DESK_DIR;
       // Отбрасываем только "исторический" replay change-события (mtime раньше старта
       // наблюдения); add/unlink никогда не отбрасываются — это всегда реальные изменения.
-      if (kind === 'change' && stats && stats.mtimeMs < startedAt) {
+      if (kind === 'change' && stats &&
+          (stats.mtimeMs < startedAt || (isBoard && stats.mtimeMs === initialBoardMtimeMs))) {
         lastReplayAt = performance.now();
         return;
       }
-      const name = basename(path);
-      const parent = basename(dirname(path));
-      if (name === 'board.yaml' && parent === DESK_DIR) {
+      if (isBoard) {
         schedule('board.yaml', { type: 'board_changed' });
         return;
       }
