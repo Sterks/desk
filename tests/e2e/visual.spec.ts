@@ -18,6 +18,13 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       await page.setViewportSize({ width, height: 900 });
       await openBoard(page, VISUAL_TASKS);
+      // openBoard проверяет последнюю карточку в Done и прокручивает доску к ней.
+      // Для снимка фиксируем начальное положение горизонтальной прокрутки.
+      await page.locator('.board').evaluate((board) => {
+        board.style.scrollSnapType = 'none';
+        board.scrollLeft = 0;
+      });
+      await expect.poll(() => page.locator('.board').evaluate((board) => board.scrollLeft)).toBe(0);
       await page.evaluate(() => document.fonts.ready);
       await expect(page).toHaveScreenshot(`board-${width}-${scheme}.png`, { animations: 'disabled' });
     });

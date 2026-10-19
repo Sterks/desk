@@ -1,0 +1,49 @@
+name: Release checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # Скриншоты Playwright записаны на macOS 27.
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tui/go.mod
+          cache-dependency-path: tui/go.sum
+      - run: npm ci
+      - run: npx playwright install chromium firefox webkit
+      - run: npm run verify:release
+      - name: Check installation from the packed artifact
+        run: |
+          package_tarball="$(npm pack --pack-destination "$RUNNER_TEMP")"
+          npm install --prefix "$RUNNER_TEMP/desk-install" --omit=dev --ignore-scripts "$RUNNER_TEMP/$package_tarball"
+          project_dir="$(mktemp -d)"
+          cd "$project_dir"
+          "$RUNNER_TEMP/desk-install/node_modules/.bin/desk" init
+          "$RUNNER_TEMP/desk-install/node_modules/.bin/desk" validate
+
+  firefox:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install firefox
+      - run: npm run build
+      # Эталоны скриншотов записаны на macOS 27; здесь проверяем остальные сценарии.
+      - run: npx playwright test --project=firefox --grep-invert 'доска [0-9]+px, (light|dark)'

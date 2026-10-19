@@ -1,7 +1,7 @@
 .board {
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: safe center;
   gap: var(--space-4);
   min-height: calc(100vh - 5rem);
   padding: var(--space-4);

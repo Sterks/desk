@@ -7,4 +7,15 @@ tests/e2e/.tmp-project/
 .desk/.lock
 .desk/.agent-runs.json
 .desk/**/*.tmp
+.claude/
 .claude/settings.local.json
+tui/bin/
+.worktrees/
+docs/
+.codex/
+.desk/
+.omc/
+**/.omc
+node_modules/
+test-results/
+playwright.config.ts
