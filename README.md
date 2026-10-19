@@ -42,6 +42,7 @@ name: "My app"
 desk init [--claude-md] [--hooks]  создать доску (и подключить хуки Claude Code)
 desk mcp                           запустить MCP-сервер по stdio
 desk ui [--port N] [--open]        открыть локальную веб-доску
+desk tui                           доска в терминале (Go, Bubble Tea)
 desk validate                      проверить board.yaml и задачи
 desk hooks install                 добавить хуки сабагентов в .claude/settings.json
 desk hook agent-start|agent-attach|agent-end  обработчики хуков (Claude Code вызывает их сам)
@@ -50,6 +51,22 @@ desk hook agent-start|agent-attach|agent-end  обработчики хуков 
 По умолчанию UI доступен на `http://127.0.0.1:4717`.
 
 Задачи — Markdown-файлы с YAML-заголовком. Правила колонок, полей, переходов и WIP-лимитов задаются в `.desk/board.yaml`.
+
+## Терминальная доска (TUI)
+
+`desk tui` поднимает HTTP API на свободном порту и запускает Go-клиент `desk-tui`. Клиент ходит в тот же API, что и веб-UI, поэтому правила переходов, WIP-лимиты и история работают одинаково. Изменения из других источников (агенты, веб-UI, правка файлов) приходят по SSE.
+
+Сборка (нужен Go ≥ 1.25): `npm run build:tui` кладёт бинарь в `tui/bin/desk-tui`. Порядок поиска: `DESK_TUI_BIN` → `tui/bin/desk-tui` → `PATH`.
+
+| Клавиши | Действие |
+|---|---|
+| `h` `l` / `j` `k` | колонка / карточка |
+| `H` `L` | перенести карточку в соседнюю колонку (если нужно поле, например `assignee`, TUI спросит) |
+| `enter` | детали: описание, заметки, история |
+| `n` `e` `a` | новая задача, правка названия, заметка |
+| `r` / `q` | обновить / выход |
+
+Тесты: `npm run test:tui`. Проверка против живого сервера: `DESK_LIVE_API=http://127.0.0.1:4717 go test ./internal/api -run Live` (из `tui/`).
 
 ## Сабагенты на доске
 

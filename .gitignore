@@ -8,3 +8,4 @@ tests/e2e/.tmp-project/
 .desk/.agent-runs.json
 .desk/**/*.tmp
 .claude/settings.local.json
+tui/bin/

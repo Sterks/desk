@@ -9,6 +9,7 @@ import { gitUserName, toActorName } from './git.js';
 import { runHook } from './hook-command.js';
 import { installHooks } from './hooks-install.js';
 import { initProject } from './init.js';
+import { runTui } from './tui.js';
 import { validateProject } from './validate-project.js';
 
 export const DEFAULT_PORT = 4717;
@@ -20,6 +21,7 @@ export const HELP = `desk — канбан-доска для агентов
   desk init [--claude-md] [--hooks]  создать .desk/ и подключить MCP (и хуки Claude Code)
   desk mcp                           MCP-сервер по stdio
   desk ui [--port N] [--open]        веб-доска
+  desk tui                           доска в терминале (нужен desk-tui, см. npm run build:tui)
   desk validate                      проверить board.yaml и задачи
   desk hooks install                 добавить хуки сабагентов в .claude/settings.json
   desk hook agent-start|agent-attach|agent-end
@@ -116,6 +118,8 @@ async function dispatch(command: string | undefined, rest: string[], io: CliIo):
       return 0;
     case 'ui':
       return await runUi(rest, io);
+    case 'tui':
+      return await runTui(rest, io);
     case 'hook':
       return await runHook(rest[0], io);
     case 'hooks':

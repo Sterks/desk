@@ -16,10 +16,12 @@
     "build": "npm run build:server && npm run build:ui",
     "build:server": "tsc -p tsconfig.build.json",
     "build:ui": "vite build --config ui/vite.config.ts",
+    "build:tui": "cd tui && go build -o bin/desk-tui ./cmd/desk-tui",
     "dev": "npm run build:server && concurrently -k -n api,ui -c blue,green \"node dist/cli/index.js ui\" \"npm:dev:ui\"",
     "dev:ui": "vite --config ui/vite.config.ts",
     "typecheck": "tsc --noEmit && vue-tsc --noEmit -p ui/tsconfig.json",
     "test": "vitest run",
+    "test:tui": "cd tui && go vet ./... && go test -race -cover ./...",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:headed": "npm run build && playwright test --headed"
